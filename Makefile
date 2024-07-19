@@ -5,7 +5,7 @@ reset=$(shell tput sgr0)
 
 AS65 ?= ca65
 LD65 ?= ld65
-CFLAGS65 ?=
+CFLAGS65 ?= -g
 LDFLAGS65 ?=
 
 MD5 ?= $(CURDIR)/helper_programs/md5sum
