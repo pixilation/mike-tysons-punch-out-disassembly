@@ -3,7 +3,7 @@
 .include "Mike_Tysons_Punchout_Defines.asm"
 
 .org $8000
-.segment "PRG_Bank0"
+.segment "PRG_Bank000"
 
 ;----------------------------------------------------------------------------------------------------
 

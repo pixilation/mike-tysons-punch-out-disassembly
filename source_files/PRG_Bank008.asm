@@ -2,7 +2,7 @@
 .include "Mike_Tysons_Punchout_Defines.asm"
 
 .org $8000
-.segment "PRG_Bank8"
+.segment "PRG_Bank008"
 
 ;--------------------------------------[ Forward Declarations ]--------------------------------------
 

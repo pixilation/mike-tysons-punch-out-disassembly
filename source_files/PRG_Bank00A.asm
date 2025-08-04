@@ -2,7 +2,7 @@
 .include "Mike_Tysons_Punchout_Defines.asm"
 
 .org $8000
-.segment "PRG_BankA"
+.segment "PRG_Bank00A"
 
 L8000:  JMP $8087
 L8003:  AND #$7F

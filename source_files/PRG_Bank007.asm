@@ -2,7 +2,7 @@
 .include "Mike_Tysons_Punchout_Defines.asm"
 
 .org $8000
-.segment "PRG_Bank7"
+.segment "PRG_Bank007"
 
 L8000:  JMP UpdateStars         ;($8974)
 L8003:  JMP UpdateHeartsDisplay ;($890D)

@@ -24,7 +24,7 @@ PRG_SOURCES := $(wildcard $(SRC_DIR)/PRG_Bank*.asm)
 
 # Generate corresponding output file names
 PRG_NAMES := $(patsubst $(SRC_DIR)/%.asm,%,$(PRG_SOURCES))
-OBJ_NAMES := Header $(PRG_NAMES)
+OBJ_NAMES := $(PRG_NAMES)
 OBJS := $(patsubst %,$(OBJ_DIR)/%.o,$(OBJ_NAMES))
 BIN_FILES := $(patsubst %,$(OUT_DIR)/%.bin,$(OBJ_NAMES))
 ORIG_FILES := $(patsubst %,$(ORIG_DIR)/%.bin,$(OBJ_NAMES))
@@ -42,8 +42,8 @@ rom: $(ROM)
 obj: $(OBJS)
 prg: $(BIN_FILES)
 
-# Rule to generate .bin files from .asm files
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.asm $(INCLUDES)
+# Rule to generate .o files from .asm files
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.asm $(INCLUDES) $(SRC_DIR)/main.asm
 	@mkdir -p $(OBJ_DIR)
 	@echo "${magenta}Assembling $<${reset}"
 	@$(AS65) $(CFLAGS65) $< -o $@
@@ -55,7 +55,7 @@ $(BIN_FILES): $(BIN_CFG) $(OBJS)
 	@$(LD65) -o $(OUT_DIR)/PRG -m $(OUT_DIR)/map.txt -C $^
 
 # Rule to generate .nes file from .o files
-$(ROM): $(ROM_CFG) $(OBJS)
+$(ROM): $(ROM_CFG) $(OBJS) $(OBJ_DIR)/main.o
 	@$(LD65) -o $@ --dbgfile $(DBG) -m $(MAP) -C $^
 
 # One-time computation of reference checksums
@@ -74,4 +74,4 @@ check: $(OUT_DIR)/checksums.md5 $(BIN_FILES)
 clean:
 	@$(RM) -r $(OUT_DIR) $(ORIG_DIR)/mtpo.nes
 
-.PHONY: all clean check rom objs
+.PHONY: all clean check rom obj

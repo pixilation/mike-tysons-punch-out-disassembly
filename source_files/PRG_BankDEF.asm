@@ -1,7 +1,7 @@
 .include "Mike_Tysons_Punchout_Defines.asm"
 
 .org $A000
-.segment "PRG_BankD"
+.segment "PRG_Bank00D"
 
 
 ;--------------------------------------[ Forward Declarations ]--------------------------------------
@@ -7788,7 +7788,7 @@ LDFE8:  .byte $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $
 LDFF8:  .byte $00, $00, $00, $00, $00, $00, $00, $00
 
 .org $E000
-.segment "PRG_BankE"
+.segment "PRG_Bank00E"
 
 ;---------------------------------[ DMC Audio Channel Sample Data ]----------------------------------
 
