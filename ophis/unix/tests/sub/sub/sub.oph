@@ -1,3 +1,0 @@
-.byte "SUB 2 START",10
-.require "../baseinc.oph"
-.byte "SUB 2 END",10
