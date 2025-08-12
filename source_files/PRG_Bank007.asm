@@ -1,8 +1,7 @@
 
 .include "Mike_Tysons_Punchout_Defines.asm"
 
-.org $8000
-.segment "PRG_Bank007"
+.segment "PRG_Bank007": DIRECT
 
 L8000:  JMP UpdateStars         ;($8974)
 L8003:  JMP UpdateHeartsDisplay ;($890D)
@@ -1754,7 +1753,7 @@ _VerifyPassword:
 L8EC3:  LDX #$00
 L8EC5:  LDA SavedPasskey,Y
 L8EC8:  SEC
-L8EC9:  SBC PasswordSalt,X      ;($9101)
+L8EC9:  SBC a:PasswordSalt,X      ;($9101)
 L8ECC:  BPL $8ED1
 L8ECE:  CLC
 L8ECF:  ADC #$0A

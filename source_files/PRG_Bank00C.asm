@@ -1,8 +1,7 @@
 
 .include "Mike_Tysons_Punchout_Defines.asm"
 
-.org $8000
-.segment "PRG_Bank00C"
+.segment "PRG_Bank00C": DIRECT
 
 L8000:  .word $9170, $8012, $9341, $9717, $98A7, $0000, $97D9, $9845
 L8010:  .word $9916, $0000, $80D0, $80D9, $80E5, $80EB, $80FD, $8103

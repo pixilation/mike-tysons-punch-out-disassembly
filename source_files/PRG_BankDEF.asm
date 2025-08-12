@@ -1,7 +1,6 @@
 .include "Mike_Tysons_Punchout_Defines.asm"
 
-.org $A000
-.segment "PRG_Bank00D"
+.segment "PRG_BankDEF": DIRECT
 
 
 ;--------------------------------------[ Forward Declarations ]--------------------------------------
@@ -4102,10 +4101,6 @@ LBFF6:  STA $E2                 ;$E2 is the loop counter here, counting down fro
 LBFF8:  JSR LoadPRGBank0C       ;($AA64)
 LBFFB:  LDX #$06
 LBFFD:  JSR LoadPrgPointer      ;($BF9E) Load pointer E0=#$9717 (read from $8006 in bank C)
-
-.org $C000
-.segment "PRG_Bank00E"
-
 LC000:  LDX #$00
 LC002:  LDA ($E0),Y             ;Copy $976A through $9785 -->
 LC004:  STA $0411,X             ;into $0411 through $042C
@@ -7790,9 +7785,6 @@ LDFC8:  .byte $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $
 LDFD8:  .byte $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00
 LDFE8:  .byte $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00
 LDFF8:  .byte $00, $00, $00, $00, $00, $00, $00, $00
-
-.org $E000
-.segment "PRG_Bank00F"
 
 ;---------------------------------[ DMC Audio Channel Sample Data ]----------------------------------
 
