@@ -17,15 +17,15 @@ OBJ_DIR := output_files/obj
 ORIG_DIR := original_files
 
 # Dependencies that affect all other source files
-INCLUDES := $(SRC_DIR)/Mike_Tysons_Punchout_Defines.asm
+INCLUDES := $(SRC_DIR)/Mike_Tysons_Punchout_Defines.asm $(SRC_DIR)/Globals.inc
 
 # Find assembly source files for all PRG Banks
 PRG_SOURCES := $(wildcard $(SRC_DIR)/PRG_Bank*.asm)
 
 # Generate corresponding output file names
 PRG_NAMES := $(patsubst $(SRC_DIR)/%.asm,%,$(PRG_SOURCES))
-OBJ_NAMES := $(PRG_NAMES)
-OBJS := $(patsubst %,$(OBJ_DIR)/%.o,$(OBJ_NAMES))
+OBJ_NAMES := $(PRG_NAMES) Header
+OBJS := $(patsubst %,$(OBJ_DIR)/%.o,$(OBJ_NAMES)) $(OBJ_DIR)/RAM.o
 BIN_FILES := $(patsubst %,$(OUT_DIR)/%.bin,$(OBJ_NAMES))
 ORIG_FILES := $(patsubst %,$(ORIG_DIR)/%.bin,$(OBJ_NAMES))
 
@@ -43,7 +43,7 @@ obj: $(OBJS)
 prg: $(BIN_FILES)
 
 # Rule to generate .o files from .asm files
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.asm $(INCLUDES) $(SRC_DIR)/main.asm
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.asm $(INCLUDES)
 	@mkdir -p $(OBJ_DIR)
 	@echo "${magenta}Assembling $<${reset}"
 	@$(AS65) $(CFLAGS65) $< -o $@
@@ -55,7 +55,7 @@ $(BIN_FILES): $(BIN_CFG) $(OBJS)
 	@$(LD65) -o $(OUT_DIR)/PRG -m $(OUT_DIR)/map.txt -C $^
 
 # Rule to generate .nes file from .o files
-$(ROM): $(ROM_CFG) $(OBJS) $(OBJ_DIR)/main.o
+$(ROM): $(ROM_CFG) $(OBJS) $(OBJ_DIR)/CHR_Banks.o
 	@$(LD65) -o $@ --dbgfile $(DBG) -m $(MAP) -C $^
 
 # One-time computation of reference checksums
@@ -70,6 +70,12 @@ check: $(OUT_DIR)/checksums.md5 $(BIN_FILES)
 	@(cd $(dir $<); $(MD5) -c $(notdir $<)) 2>&1 |\
 	  sed -E 's/(.*OK)/${green}\1${reset}/;s/(.*FAILED)/${red}\1${reset}/'
 
+watch:
+	@echo "${cyan}Watching for changes...${reset}"
+	@while true; do \
+		make $(WATCHMAKE); \
+		inotifywait -e modify,create,delete -r $(SRC_DIR); \
+	done
 
 clean:
 	@$(RM) -r $(OUT_DIR) $(ORIG_DIR)/mtpo.nes

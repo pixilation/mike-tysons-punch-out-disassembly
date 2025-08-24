@@ -1886,7 +1886,7 @@ LAEE8:  PLA                     ;
 LAEE9:  STA IndJumpPtrLB        ;
 
 LAEEB:  LDY DatIndexTemp        ;Restore the data index.
-LAEEE:  JMP (_IndJumpPtr)       ;Indirect jump do desired function.
+LAEEE:  JMP (IndJumpPtr)       ;Indirect jump do desired function.
 
 ;----------------------------------------------------------------------------------------------------
 
