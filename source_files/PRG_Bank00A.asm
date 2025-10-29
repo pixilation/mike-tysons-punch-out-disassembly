@@ -1,169 +1,279 @@
-
 .include "Mike_Tysons_Punchout_Defines.asm"
 
 .segment "PRG_Bank00A": DIRECT
 
-L8000:  JMP $8087
-L8003:  AND #$7F
-L8005:  STA $04B0
-L8008:  ASL
+;Message commands
+EOL :=                  $80     ;End of Line / New line
+EOM :=                  $00     ;End of Message
+CLEAR :=                $FA     ;Clear the current message, sized for Doc messages
+CLEAR_OPP :=            $FB     ;Clear the current message, sized for opponent messages (unused)
+RESET :=                $FC     ;Move the text cursor to the start of the message box
+
+;Message commands with parameters
+SLEEP :=                $81     ;Sleep before outputting the next character. Example: SLEEP, 96 - sleep for 96 frames
+ADVANCE :=              $FE     ;Advance the text cursor by the given amount. Example: ADVANCE, $01
+SFX :=                  $F9     ;Set the talking sound effect (see SQ1_ constants, and SND_OFF). Example: SFX, $09
+
+PrintMessage:
+L8000:  JMP CheckStatus         ;Entry point
+
+;Initialize a message based on the MessageID in the accumulator
+InitMessage:
+L8003:  AND #$7F                ;Clear bit 7 of the MessageID to indicate the message has been initialized
+L8005:  STA MessageID           ;Store MessageID, having cleared the uninitialized bit (bit 7)
+L8008:  ASL                     ;Multiply by 2 to get a message-index into a table of pointers (address of first byte of pointer)
 L8009:  LDY #$00
-L800B:  STY $04B2
-L800E:  STY $0414
-L8011:  STY $0415
-L8014:  CMP #$E2
-L8016:  BCS $804A
-L8018:  CMP #$42
-L801A:  BCC $8034
-L801C:  SBC #$40
-L801E:  TAY
+L800B:  STY LetterIndex         ;Start processing the message at index 0
+L800E:  STY VRAMQueueData+1     ;($0414)Add 2 null byte terminator to VRAM queue after 1st character
+L8011:  STY VRAMQueueData+2     ;($0415)
+L8014:  CMP #$E2                ;Compare the message-index in A to $E2 (same as comparing MessageID to $71)
+L8016:  BCS InitMiscMessage     ;If MessageID >= $71, then it is a miscellaneous message
+L8018:  CMP #$42                ;Compare the message-index in A to $42 (same as comparing MessageID to $21)
+L801A:  BCC InitTrainerMessage  ;If MessageID < $21, then it is a trainer message
+;Fall through to opponent message (MesssageID $21 to $70)
+
+;Load opponent message
+;Handles MessageID in range [$21,$70]
+InitOpponentMessage:
+L801C:  SBC #$40                ;(C=1) Subtract $40 from the message-index in A (convert MessageID from range [$21,$70] to [$01,$50])
+L801E:  TAY                     ;Transfer the message-index in A to Y for a lookup into the OpponentMsgPtrs table
 L801F:  LDA OpponentMsgPtrs,Y   ;($8181)
 L8022:  INY
-L8023:  STA $04B3
+L8023:  STA MessagePtr
 L8026:  LDA OpponentMsgPtrs,Y   ;($8181)
-L8029:  STA $04B4
-L802C:  LDX #$72
-L802E:  LDY #$22
-L8030:  LDA #$0B
-L8032:  BNE $806D
-L8034:  TAY
+L8029:  STA MessagePtr+1
+;Set the message position on screen for all opponent messages
+.scope
+pos = col_18 + row_19 + nametable_0 ;$2272
+L802C:  LDX #<pos               ;Set X to the message position (lower byte)
+L802E:  LDY #>pos               ;Set Y to the message position (upper byte)
+.endscope
+L8030:  LDA #SQ1_TALK3          ;Talking sound effect
+L8032:  BNE SetupMessage
+
+;Load trainer message
+;Handles MessageID in range [$00,$20]
+InitTrainerMessage:
+L8034:  TAY                     ;Transfer the message-index in A to Y for a lookup into the TrainerMsgPtrs table
 L8035:  LDA TrainerMsgPtrs,Y    ;($815B)
 L8038:  INY
-L8039:  STA $04B3
+L8039:  STA MessagePtr
 L803C:  LDA TrainerMsgPtrs,Y    ;($815B)
-L803F:  STA $04B4
-L8042:  LDX #$00
-L8044:  LDY #$21
-L8046:  LDA #$0A
-L8048:  BNE $806D
-L804A:  SBC #$E0
+L803F:  STA MessagePtr+1
+;Set the message position on screen for all trainer messages
+.scope
+position_doc = col_00 + row_08 + nametable_0 ;$2100
+L8042: LDX #<position_doc       ;Set X to the initial message screen position (lower byte)
+L8044: LDY #>position_doc       ;Set Y to the initial message screen position (upper byte)
+.endscope
+L8046:  LDA #SQ1_TALK2          ;Talking sound effect
+L8048:  BNE SetupMessage
+
+;Load miscellaneous message
+;Handles MessageID in range [$71,$7F]
+;Note: miscellaneous messages start with a 2 byte header with the message position
+InitMiscMessage:
+L804A:  SBC #$E0                ;(C=1) Subtract $E0 from the message-index in A (convert MessageID from range [$71,$7F] to [$01,$0F])
 L804C:  TAY
-L804D:  LDA MiscStrings,Y       ;($81E5)
+L804D:  LDA MiscStrings,Y       ;($81E5)Prepare to load header bytes from string
 L8050:  INY
-L8051:  STA $04B3
-L8054:  STA $E0
+L8051:  STA MessagePtr
+L8054:  STA GenPtrE0            ;Save a 2nd copy of the message pointer to the zero page
 L8056:  LDA MiscStrings,Y       ;($81E5)
-L8059:  STA $04B4
-L805C:  STA $E1
-L805E:  LDY #$00
-L8060:  LDA ($E0),Y
-L8062:  TAX
-L8063:  INY
-L8064:  LDA ($E0),Y
-L8066:  INY
-L8067:  STY $04B2
-L806A:  TAY
-L806B:  LDA #$80
-L806D:  STY $04B5
-L8070:  STY $04B7
-L8073:  STY $0411
-L8076:  STX $04B6
-L8079:  STX $04B8
-L807C:  STX $0412
-L807F:  STA $04BD
-L8082:  BNE $808F
-L8084:  JMP $8003
-L8087:  TAX
-L8088:  BMI $8084
-L808A:  DEC $04B1
-L808D:  BNE $80BC
+L8059:  STA MessagePtr+1
+L805C:  STA GenPtrE0+1
+L805E:  LDY #$00                ;Y contains an index into the message
+L8060:  LDA (GenPtrE0),Y        ;Load the MessagePosLB from byte 0 of the misc message header
+L8062:  TAX                     ;Set X to the MessagePosLB
+L8063:  INY                     ;Get the next byte of the message
+L8064:  LDA (GenPtrE0),Y        ;Load the MessagePosUB from byte 1 of the misc message header
+L8066:  INY                     ;Move past the header
+L8067:  STY LetterIndex         ;Set the start of the message to 2, due to the header
+L806A:  TAY                     ;Set Y to the MessagePosUB
+L806B:  LDA #SND_OFF            ;Set talking sound effect off, as music plays during miscellaneous messages
+
+;Set up the message variables
+SetupMessage:;(Y=MessagePosUB, X=MessagePosLB, A=talking sfx)
+L806D:  STY LinePosUB           ;Set the starting line position
+L8070:  STY MessagePosUB        ;Save the position of the message, for restoring line and cursor positions after a RESET
+L8073:  STY VQAddressUB         ;Set the cursor position where the next character will be output
+L8076:  STX LinePosLB
+L8079:  STX MessagePosLB
+L807C:  STX VQAddressLB
+L807F:  STA TalkingSFX          ;Set sound effect that plays while text is output
+L8082:  BNE PrepareForNextCharacter
+
+InitRequired:
+L8084:  JMP InitMessage
+
+CheckStatus:
+L8087:  TAX                     ;
+L8088:  BMI InitRequired        ;If bit 7 of the MessageID is set then the message needs to be initialized
+L808A:  DEC LetterTimer         ;
+L808D:  BNE Return_1            ;Wait for the timer to reach 0 to print the next letter
+
+PrepareForNextCharacter:
 L808F:  LDA #$04
-L8091:  STA $04B1
-L8094:  LDY $04B2
-L8097:  LDA $04B3
-L809A:  STA $E0
-L809C:  LDA $04B4
-L809F:  STA $E1
-L80A1:  LDA ($E0),Y
-L80A3:  INY
-L80A4:  TAX
-L80A5:  BEQ $80BD
-L80A7:  BMI $80E9
-L80A9:  LDX $04BD
-L80AC:  STX $F0
-L80AE:  STA $0413
-L80B1:  STY $04B2
-L80B4:  LDA #$81
-L80B6:  STA $0410
-L80B9:  INC $0412
+L8091:  STA LetterTimer         ;Wait 4 frames after this character before printing the next one
+L8094:  LDY LetterIndex         ;Load the index of the next byte of the message to be processed
+L8097:  LDA MessagePtr          ;Load the MessagePtr into the zero page
+L809A:  STA GenPtrE0
+L809C:  LDA MessagePtr+1
+L809F:  STA GenPtrE0+1
+
+NextCharacter:
+L80A1:  LDA (GenPtrE0),Y        ;Get the next byte from the message
+L80A3:  INY                     ;Increment the message position
+L80A4:  TAX                     ;Set the zero flag
+L80A5:  BEQ Return_2            ;NULL byte indicates end of message
+L80A7:  BMI HandleSpecialChar   ;
+L80A9:  LDX TalkingSFX          ;Load talking sound effect for printable character
+L80AC:  STX SFXInitSQ1          ;($F0)
+
+HandleCharacter:
+L80AE:  STA VRAMQueueData       ;Set this as the next character to write to VRAM
+L80B1:  STY LetterIndex
+;Fall through to SetPendingVRAMUpdate
+
+;Update the VRAM queue status to indicate there are tiles to write to VRAM (otherwise the text won't appear)
+SetPendingVRAMUpdate:
+L80B4:  LDA #$81                ;%10000001 - Set bit 7 to indicate a pending VRAM update
+L80B6:  STA VRAMQueueStatus     ;($0410)
+L80B9:  INC VQAddressLB
+
+Return_1:
 L80BC:  RTS
 
-L80BD:  STA $04B0
+Return_2:
+L80BD:  STA MessageID           ;Message finished, store NULL byte into MessageID
 L80C0:  RTS
 
-L80C1:  LDA $04B6
+HandleEOL:
+L80C1:  LDA LinePosLB           ;Load the position of the current line
 L80C4:  CLC
-L80C5:  ADC #$20
-L80C7:  STA $04B6
-L80CA:  STA $0412
-L80CD:  BCC $80A1
-L80CF:  INC $04B5
-L80D2:  INC $0411
-L80D5:  BNE $80A1
-L80D7:  LDA ($E0),Y
-L80D9:  STA $04B1
-L80DC:  INY
-L80DD:  STY $04B2
+L80C5:  ADC #$20                ;Move to the next line by adding the screen width of $20
+L80C7:  STA LinePosLB           ;Save the updated line position
+L80CA:  STA VQAddressLB         ;Set the cursor to the start of the new line
+L80CD:  BCC NextCharacter       ;Check if adding $20 caused an overflow requiring the upper bytes to be updated
+L80CF:  INC LinePosUB           ;Carry is set, so upper bytes need to increment (e.g. $21FF+1 = $2200)
+L80D2:  INC VQAddressUB
+L80D5:  BNE NextCharacter       ;This will always jump
+
+;Handle $81 $xx in message - sleep for $xx frames
+HandleSleep:
+L80D7:  LDA (GenPtrE0),Y        ;Get the next byte of the message, which is the $xx argument to the SLEEP command
+L80D9:  STA LetterTimer         ;Wait this many frames before printing the next letter
+L80DC:  INY                     ;Consume the $xx argument and move to the next character of the message
+L80DD:  STY LetterIndex
 L80E0:  RTS
-L80E1:  LDA ($E0),Y
-L80E3:  STA $04BD
-L80E6:  INY
-L80E7:  BNE $80A1
-L80E9:  INX
-L80EA:  BEQ $80AE
+
+;Handle $F9 $xx in message - change talking sound effect
+HandleSFX:
+L80E1:  LDA (GenPtrE0),Y        ;Get the next byte of the message, which is the $xx argument to the SFX command
+L80E3:  STA TalkingSFX          ;Store it in the sound effect register
+L80E6:  INY                     ;Consume the $xx argument and move to the next character of the message
+L80E7:  BNE NextCharacter
+
+;Handle characters with bit 7 set
+HandleSpecialChar:
+L80E9:  INX                     ;Increment the X register until it overflows to 0
+L80EA:  BEQ HandleCharacter     ;$FF - Space
 L80EC:  INX
-L80ED:  BEQ $8104
+L80ED:  BEQ HandleAdvance       ;$FE, $xx - ADVANCE, move cursor forward by $xx
 L80EF:  INX
-L80F0:  BEQ $80AE
+L80F0:  BEQ HandleCharacter     ;$FD - Space (unused)
 L80F2:  INX
-L80F3:  BEQ $8110
+L80F3:  BEQ HandleReset         ;$FC - RESET
 L80F5:  INX
-L80F6:  BEQ $812D
+L80F6:  BEQ HandleClearOpp      ;$FB - Clear opponent message (unused)
 L80F8:  INX
-L80F9:  BEQ $8133
+L80F9:  BEQ HandleClearTrainer  ;$FA - Clear Doc message
 L80FB:  INX
-L80FC:  BEQ $80E1
-L80FE:  CMP #$80
-L8100:  BEQ $80C1
-L8102:  BNE $80D7
-L8104:  LDA ($E0),Y
+L80FC:  BEQ HandleSFX           ;$F9, $xx - Set talking sound effect to index $xx
+L80FE:  CMP #EOL                ;Is character $80? (comparing to accumulator, not X)
+L8100:  BEQ HandleEOL           ;$80 - EOL
+L8102:  BNE HandleSleep         ;$81, $xx - CMD_SLEEP, Sleep for that many frames ($82-$F8 map to this but are unused)
+
+;Handle $FE $xx in message - move cursor forward by $xx
+;This is typically used to set the start of a new line after a EOL character.
+;Add $xx to the cursor position, moving it right, wrapping to a newline every 32 characters.
+HandleAdvance:
+L8104:  LDA (GenPtrE0),Y        ;Get the next byte of the message, which is the $xx argument to the ADVANCE command
 L8106:  CLC
-L8107:  ADC $0412
-L810A:  STA $0412
-L810D:  INY
-L810E:  BNE $80A1
-L8110:  LDA $04B8
-L8113:  STA $04B6
-L8116:  STA $0412
-L8119:  LDA $04B7
-L811C:  STA $04B5
-L811F:  STA $0411
-L8122:  LDA #$00
-L8124:  STA $0414
-L8127:  STA $0415
-L812A:  JMP $80A1
-L812D:  LDA #$08
-L812F:  LDX #$0B
-L8131:  BNE $8137
-L8133:  LDA #$06
-L8135:  LDX #$0C
-L8137:  STA $E3
-L8139:  STX $E2
-L813B:  STY $04B2
-L813E:  LDY #$00
-L8140:  LDX $E3
-L8142:  LDA #$FF
-L8144:  STA $0413,Y
-L8147:  INY
-L8148:  DEX
-L8149:  BNE $8144
-L814B:  LDA #$00
-L814D:  STA $0413,Y
-L8150:  INY
-L8151:  DEC $E2
-L8153:  BNE $8140
-L8155:  STA $0413,Y
-L8158:  JMP $80B4
+L8107:  ADC VQAddressLB         ;Add the $xx argument to the cursor position
+L810A:  STA VQAddressLB
+L810D:  INY                     ;Consume the $xx argument and move to the next character of the message
+L810E:  BNE NextCharacter
+
+;Handle $FC in message - Reset cursor to beginning of message
+;Used in a RESET, CLEAR, RESET sequence to clear the current dialogue and output a second page of dialogue
+HandleReset:
+L8110:  LDA MessagePosLB        ;Get the message position
+L8113:  STA LinePosLB           ;Reset the line position
+L8116:  STA VQAddressLB         ;Reset the cursor position
+L8119:  LDA MessagePosUB
+L811C:  STA LinePosUB
+L811F:  STA VQAddressUB
+L8122:  LDA #$00                ;Null byte terminator
+L8124:  STA VRAMQueueData+1     ;($0414)Add 2 null byte terminator to VRAM queue after 1st character
+L8127:  STA VRAMQueueData+2     ;($0415)TODO: explain this
+L812A:  JMP NextCharacter
+
+;Handle $FB in message - Clear opponent message from screen
+;Clear the current message by writing 8 rows of 11 spaces to the VRAM queue
+;This appears to be sized for opponent messages, however no messages use this command as no opponents have 2 pages of text.
+HandleClearOpp:
+.scope
+        rows = 8
+        columns =  11
+        LDA #rows
+        LDX #columns
+.endscope
+L8131:  BNE ClearMessage
+
+;Handle $FA in message - Clear trainer message from screen
+;Clear the current message by writing 6 rows of 12 spaces to the VRAM queue
+;This is sized for trainer messages.
+HandleClearTrainer:
+.scope
+        rows = 6
+        columns =  12
+        LDA #rows
+        LDX #columns
+.endscope
+;Fall through to ClearMessage
+
+;Clear the trainer message by filling the VRAM queue with spaces
+;Used in a RESET, CLEAR, RESET sequence to clear the current dialogue and output a second page of dialogue (e.g. alternate between Mac and Doc)
+ClearMessage: ;(A=ROWS, X=COLUMNS)
+.scope
+        cols_left =    $E2      ;Loop variable for the current column being cleared
+        rows_to_clr =  $E3      ;Number of rows to clear (used to populate X as a loop variable)
+
+        STA rows_to_clr         ;Save the number of rows to clear
+        STX cols_left           ;Save columns to clear for use as loop variable
+        STY LetterIndex         ;Save the current letter index
+        LDY #$00                ;Y is the offset into the VRAMQueueData table, start at 0 and increment after each byte written
+
+@OuterLoop:                     ;For cols_left = COLUMNS to 1
+        LDX rows_to_clr         ;Write a string this long to the table
+        LDA #$FF                ;Fill the string with the tile representing the space character
+
+@InnerLoop:                     ;For X = rows_to_clr to 1
+        STA VRAMQueueData,Y     ;Set [$0413,$0418] = #$FF
+        INY                     ;Point to the next byte in the table
+        DEX                     ;Decrement the loop counter
+        BNE @InnerLoop
+
+        LDA #EOM                ;A = 0
+        STA VRAMQueueData,Y     ;Terminate the string with a NULL byte
+        INY
+        DEC cols_left           ;Decrement remaining strings
+        BNE @OuterLoop
+
+        STA VRAMQueueData,Y     ;Write 2nd null byte after last string
+        JMP SetPendingVRAMUpdate
+.endscope
 
 ;; Pointers to Mac and Doc messages
 TrainerMsgPtrs:
@@ -183,550 +293,742 @@ L81E1:  .word OppMsg48, OppMsg49
 
 ;; Pointers to miscellaneous strings for intro and credits, etc.
 MiscStrings:
-L81E5:  .word $0000, $915F, $91D7, $921E, $9231, $9240, $9255, $9331
+L81E5:  .word $0000, MiscMsg1, MiscMsg2, MiscMsg3, MiscMsg4, MiscMsg5, MiscMsg6, MiscMsg7
 
 ;; -----------------------------------------------------------------------------
 
+; Map ASCII character to the Punch Out tile map
+; < and > are used in place of left-double-quote and right-double-quote (as ASCII doesn't have these, but Punch Out does)
+.include "charmap.asm"
+
+; EOL           - move the cursor to the start of the next line
+; ADVANCE, $xx  - moves the cursor by $xx
+; EOM           - end the message
+; SFX, $xx      - change the talking sound effect
+; RESET         - move the cursor back to the starting position
+; CLEAR         - clear the trainer message
+; CLEAR_OPP     - clear the opponenent message (unused but functional)
+; SLEEP, $xx    - wait $xx frames before the next character (in addition to the standard 4 frames)
+
+; Standard dialog:
+; <Hello
+;  World>
+;       "<Hello"        - output left-double-quote then "Hello"
+;       EOL             - move the cursor to the start of the next line
+;       ADVANCE, $01    - the first line started with "<", so move forward 1 character to line up the letters
+;       "World>"        - output "World" then right-double-quote
+;       EOM             - end the message
+;       
+
+; Switch between Doc and Mac talking:
+;       SLEEP, $60              - keep the current message on screen for 100 frames ($60 => 96, + standard 4 frames)
+;       RESET, CLEAR,   RESET   - clear the dialogue for a another page of dialogue
+;       SFX, SQ1_TALK2          - change the talking sound to another person
+
 ;; "KEEP YOUR GUARD UP!"
 DocMsg01:
-L81F5:  .byte $29, $15, $0F, $0F, $1A, $FF, $23, $19, $1F, $1C, $80, $FE, $01, $11, $1F, $0B
-L820B:  .byte $1C, $0E, $FF, $1F, $1A, $27, $2A, $00
+.byte "<KEEP YOUR", EOL, ADVANCE, $01
+.byte "GUARD UP!>", EOM
 
 ;; "PUT HIM AWAY!!"
 DocMsg02:
-L820D:  .byte $29, $1A, $1F, $1E, $FF, $12, $13, $17, $80, $FE, $01, $0B, $21, $0B, $23, $27
-L821D:  .byte $27, $2A, $00
+.byte "<PUT HIM", EOL, ADVANCE, $01
+.byte "AWAY!!>", EOM
 
 ;; "STICK AND MOVE, STICK AND MOVE!"
 DocMsg03:
-L8220:  .byte $29, $1D, $1E, $13, $0D, $15, $FF, $0B, $18, $0E, $80, $FE, $01, $17, $19, $20
-L8230:  .byte $0F, $2B, $80, $FE, $01, $1D, $1E, $13, $0D, $15, $FF, $0B, $18, $0E, $80, $FE
-L8240:  .byte $01, $17, $19, $20, $0F, $27, $2A, $00
+.byte "<STICK AND", EOL, ADVANCE, $01
+.byte "MOVE,", EOL, ADVANCE, $01
+.byte "STICK AND", EOL, ADVANCE, $01
+.byte "MOVE!>", EOM
 
 ;; "WATCH HIS LEFT!"
 DocMsg04:
-L8248:  .byte $29, $21, $0B, $1E, $0D, $12, $80, $FE, $01, $12, $13, $1D, $FF, $16, $0F, $10
-L8258:  .byte $1E, $27, $2A, $00
+.byte "<WATCH", EOL, ADVANCE, $01
+.byte "HIS LEFT!>", EOM
 
 ;; "ONE TWO, ONE TWO PUNCH, MAC!"
 DocMsg05:
-L825C:  .byte $29, $19, $18, $0F, $FF, $1E, $21, $19, $2B, $80, $FE, $01, $19, $18, $0F, $FF
-L826C:  .byte $1E, $21, $19, $80, $FE, $01, $1A, $1F, $18, $0D, $12, $80, $FE, $01, $17, $0B
-L827C:  .byte $0D, $27, $2A, $00
+.byte "<ONE TWO,", EOL, ADVANCE, $01
+.byte "ONE TWO", EOL, ADVANCE, $01
+.byte "PUNCH", EOL, ADVANCE, $01
+.byte "MAC!>", EOM
 
 ;; "DANCIN' LIKE A FLY, BITE LIKE A MOSQUITO!"
 DocMsg06:
-L8280:  .byte $29, $0E, $0B, $18, $0D, $13, $18, $26, $80, $FE, $01, $16, $13, $15, $0F, $FF
-L8290:  .byte $0B, $FF, $10, $16, $23, $2B, $80, $FE, $01, $0C, $13, $1E, $0F, $80, $FE, $01
-L82A0:  .byte $16, $13, $15, $0F, $FF, $0B, $80, $FE, $01, $17, $19, $1D, $1B, $1F, $13, $1E
-L82B0:  .byte $19, $27, $2A, $00
+.byte "<DANCIN'", EOL, ADVANCE, $01
+.byte "LIKE A FLY,", EOL, ADVANCE, $01
+.byte "BITE", EOL, ADVANCE, $01
+.byte "LIKE A", EOL, ADVANCE, $01
+.byte "MOSQUITO!>", EOM
 
 ;; "HE'S HURT ME, DOC!" / "DON'T GIVE UP, MAC! FIGHT IT!!"
 DocMsg07:
-L82B4:  .byte $F9, $09, $29, $12, $0F, $26, $1D, $FF, $12, $1F, $1C, $1E, $80, $FE, $01, $17
-L82C4:  .byte $0F, $2B, $FF, $0E, $19, $0D, $27, $2A, $81, $60, $FC, $FA, $FC, $F9, $0A, $29
-L82D4:  .byte $0E, $19, $18, $26, $1E, $FF, $11, $13, $20, $0F, $80, $FE, $01, $1F, $1A, $2B
-L82E4:  .byte $FF, $17, $0B, $0D, $27, $80, $FE, $01, $10, $13, $11, $12, $1E, $27, $27, $2A
-L82F4:  .byte $00
+.byte SFX, SQ1_TALK1
+.byte "<HE'S HURT", EOL, ADVANCE, $01
+.byte "ME, DOC!>", SLEEP, $60
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte SFX, SQ1_TALK2
+.byte "<DON'T GIVE", EOL, ADVANCE, $01
+.byte "UP, MAC!", EOL, ADVANCE, $01
+.byte "FIGHT!!>", EOM
 
 ;; "I CAN'T WIN, DOC!" / "YES YOU CAN, MAC!"
 DocMsg08:
-L82F5:  .byte $F9, $09, $29, $13, $FF, $0D, $0B, $18, $26, $1E, $80, $FE, $01, $21, $13, $18
-L8305:  .byte $2B, $FF, $0E, $19, $0D, $27, $2A, $81, $60, $FC, $FA, $FC, $F9, $0A, $29, $23
-L8315:  .byte $0F, $1D, $FF, $23, $19, $1F, $80, $FE, $01, $0D, $0B, $18, $2B, $FF, $17, $0B
-L8325:  .byte $0D, $27, $2A, $00
+.byte SFX, SQ1_TALK1
+.byte "<I CAN'T", EOL, ADVANCE, $01
+.byte "WIN, DOC!>", SLEEP, $60
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte SFX, SQ1_TALK2
+.byte "<YES YOU", EOL, ADVANCE, $01
+.byte "CAN, MAC!>", EOM
 
 ;; "I'M TIRED, DOC!" / "HANG IN THERE, MAC!"
 DocMsg09:
-L8329:  .byte $F9, $09, $29, $13, $26, $17, $FF, $1E, $13, $1C, $0F, $0E, $2B, $80, $FE, $01
-L8339:  .byte $0E, $19, $0D, $27, $2A, $81, $60, $FC, $FA, $FC, $F9, $0A, $29, $12, $0B, $18
-L8349:  .byte $11, $FF, $13, $18, $80, $FE, $01, $1E, $12, $0F, $1C, $0F, $2B, $80, $FE, $01
-L8359:  .byte $17, $0B, $0D, $27, $2A, $00
+.byte SFX, SQ1_TALK1
+.byte "<I'M TIRED,", EOL, ADVANCE, $01
+.byte "DOC!>", SLEEP, $60
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte SFX, SQ1_TALK2
+.byte "<HANG IN", EOL, ADVANCE, $01
+.byte "THERE,", EOL, ADVANCE, $01
+.byte "MAC!>", EOM
 
 ;; "LISTEN MAC!! DODGE HIS PUNCH THEN COUNTER-PUNCH!"
 DocMsg10:
-L835F:  .byte $29, $16, $13, $1D, $1E, $0F, $18, $80, $FE, $05, $17, $0B, $0D, $27, $27, $2A
-L836F:  .byte $81, $40, $FC, $FA, $FC, $29, $0E, $19, $0E, $11, $0F, $80, $FE, $01, $12, $13
-L837F:  .byte $1D, $FF, $1A, $1F, $18, $0D, $12, $80, $FE, $01, $1E, $12, $0F, $18, $80, $FE
-L838F:  .byte $01, $0D, $19, $1F, $18, $1E, $0F, $1C, $28, $80, $FE, $01, $1A, $1F, $18, $0D
-L839F:  .byte $12, $27, $2A, $00
+.byte "<LISTEN", EOL, ADVANCE, $05
+.byte "MAC!!>", SLEEP, $40
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte "<DODGE", EOL, ADVANCE, $01
+.byte "HIS PUNCH", EOL, ADVANCE, $01
+.byte "THEN", EOL, ADVANCE, $01
+.byte "COUNTER-", EOL, ADVANCE, $01
+.byte "PUNCH!>", EOM
 
 ;; "LISTEN MAC!! GIVE HIM A FAST UPPER-CUT WHEN HE'S STUNNED!"
 DocMsg11:
-L83A3:  .byte $29, $16, $13, $1D, $1E, $0F, $18, $80, $FE, $05, $17, $0B, $0D, $27, $27, $2A
-L83B3:  .byte $81, $40, $FC, $FA, $FC, $29, $11, $13, $20, $0F, $FF, $12, $13, $17, $80, $FE
-L83C3:  .byte $01, $0B, $FF, $10, $0B, $1D, $1E, $80, $FE, $01, $1F, $1A, $1A, $0F, $1C, $28
-L83D3:  .byte $0D, $1F, $1E, $80, $FE, $01, $21, $12, $0F, $18, $FF, $12, $0F, $26, $1D, $80
-L83E3:  .byte $FE, $01, $1D, $1E, $1F, $18, $18, $0F, $0E, $27, $2A, $00
+.byte "<LISTEN", EOL, ADVANCE, $05
+.byte "MAC!!>", SLEEP, $40
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte "<GIVE HIM", EOL, ADVANCE, $01
+.byte "A FAST", EOL, ADVANCE, $01
+.byte "UPPER-CUT", EOL, ADVANCE, $01
+.byte "WHEN HE'S", EOL, ADVANCE, $01
+.byte "STUNNED!>", EOM
 
 ;; "LISTEN MAC!! CATCH HIM OFF-GUARD TO STUN HIM! THEN UNLOAD ON HIM!"
 DocMsg12:
-L83EF:  .byte $29, $16, $13, $1D, $1E, $0F, $18, $80, $FE, $05, $17, $0B, $0D, $27, $27, $2A
-L83FF:  .byte $81, $40, $FC, $FA, $FC, $29, $0D, $0B, $1E, $0D, $12, $FF, $12, $13, $17, $80
-L840F:  .byte $FE, $01, $19, $10, $10, $28, $11, $1F, $0B, $1C, $0E, $80, $FE, $01, $1E, $19
-L841F:  .byte $FF, $1D, $1E, $1F, $18, $80, $FE, $01, $12, $13, $17, $27, $2A, $81, $60, $FC
-L842F:  .byte $FA, $FC, $29, $1E, $12, $0F, $18, $80, $FE, $01, $1F, $18, $16, $19, $0B, $0E
-L843F:  .byte $80, $FE, $01, $19, $18, $FF, $12, $13, $17, $27, $2A, $00
+.byte "<LISTEN", EOL, ADVANCE, $05
+.byte "MAC!!>", SLEEP, $40
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte "<CATCH HIM", EOL, ADVANCE, $01
+.byte "OFF-GUARD", EOL, ADVANCE, $01
+.byte "TO STUN", EOL, ADVANCE, $01
+.byte "HIM!>", SLEEP, $60
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte "<THEN", EOL, ADVANCE, $01
+.byte "UNLOAD", EOL, ADVANCE, $01
+.byte "ON HIM!>", EOM
 
 ;; "HELP! DOC!!" / "JOIN THE NINTENDO FUN CLUB TODAY! MAC."
 DocMsg13:
-L844B:  .byte $F9, $09, $29, $12, $0F, $16, $1A, $27, $80, $FE, $01, $0E, $19, $0D, $27, $27
-L845B:  .byte $2A, $81, $60, $FC, $FA, $FC, $F9, $0A, $29, $14, $19, $13, $18, $FF, $1E, $12
-L846B:  .byte $0F, $80, $FE, $01, $18, $13, $18, $1E, $0F, $18, $0E, $19, $80, $FE, $01, $10
-L847B:  .byte $1F, $18, $FF, $0D, $16, $1F, $0C, $80, $FE, $01, $1E, $19, $0E, $0B, $23, $27
-L848B:  .byte $80, $FE, $01, $17, $0B, $0D, $25, $2A, $00
+.byte SFX, SQ1_TALK1
+.byte "<HELP!", EOL, ADVANCE, $01
+.byte "DOC!!>", SLEEP, $60
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte SFX, SQ1_TALK2
+.byte "<JOIN THE", EOL, ADVANCE, $01
+.byte "NINTENDO", EOL, ADVANCE, $01
+.byte "FUN CLUB", EOL, ADVANCE, $01
+.byte "TODAY!", EOL, ADVANCE, $01
+.byte "MAC.>", EOM
 
 ;; "HIS DEFENSE IS TOO TOUGH, DOC!" / "DON'T GIVE UP, MAC! HE HAS A WEAKNESS.."
 ;;  / "WEAKNESS? COME ON DOC! TEACH ME MORE.."
 DocMsg14:
-L8494:  .byte $F9, $09, $29, $12, $13, $1D, $80, $FE, $01, $0E, $0F, $10, $0F, $18, $1D, $0F
-L84A4:  .byte $FF, $13, $1D, $80, $FE, $01, $1E, $19, $19, $FF, $1E, $19, $1F, $11, $12, $2B
-L84B4:  .byte $80, $FE, $01, $0E, $19, $0D, $27, $2A, $81, $60, $FC, $FA, $FC, $F9, $0A, $29
-L84C4:  .byte $0E, $19, $18, $26, $1E, $FF, $11, $13, $20, $0F, $80, $FE, $01, $1F, $1A, $2B
-L84D4:  .byte $FF, $17, $0B, $0D, $27, $80, $FE, $01, $12, $0F, $FF, $12, $0B, $1D, $FF, $0B
-L84E4:  .byte $80, $FE, $01, $21, $0F, $0B, $15, $18, $0F, $1D, $1D, $25, $25, $80, $FE, $01
-L84F4:  .byte $25, $25, $25, $25, $25, $25, $2A, $81, $60, $FC, $FA, $FC, $F9, $09, $29, $21
-L8504:  .byte $0F, $0B, $15, $18, $0F, $1D, $1D, $30, $80, $FE, $01, $0D, $19, $17, $0F, $FF
-L8514:  .byte $19, $18, $80, $FE, $01, $0E, $19, $0D, $27, $80, $FE, $01, $1E, $0F, $0B, $0D
-L8524:  .byte $12, $FF, $17, $0F, $80, $FE, $01, $17, $19, $1C, $0F, $25, $25, $25, $2A, $00
+.byte SFX, SQ1_TALK1
+.byte "<HIS", EOL, ADVANCE, $01
+.byte "DEFENSE IS", EOL, ADVANCE, $01
+.byte "TOO TOUGH,", EOL, ADVANCE, $01
+.byte "DOC!>", SLEEP, $60
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte SFX, SQ1_TALK2
+.byte "<DON'T GIVE", EOL, ADVANCE, $01
+.byte "UP, MAC!", EOL, ADVANCE, $01
+.byte "HE HAS A", EOL, ADVANCE, $01
+.byte "WEAKNESS..", EOL, ADVANCE, $01
+.byte "......>", SLEEP, $60
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte SFX, SQ1_TALK1
+.byte "<WEAKNESS?", EOL, ADVANCE, $01
+.byte "COME ON", EOL, ADVANCE, $01
+.byte "DOC!", EOL, ADVANCE, $01
+.byte "TEACH ME", EOL, ADVANCE, $01
+.byte "MORE...>", EOM
 
 ;; "HIS DEFENSE IS TOO TOUGH, DOC!" / "DON'T GIVE UP, MAC! MAKE HIM CLOSE HIS BIG MOUTH"
 ;;  / "BIG MOUTH? COME ON DOC! TEACH ME MORE..."
 DocMsg15:
-L8534:  .byte $F9, $09, $29, $12, $13, $1D, $80, $FE, $01, $0E, $0F, $10, $0F, $18, $1D, $0F
-L8544:  .byte $FF, $13, $1D, $80, $FE, $01, $1E, $19, $19, $FF, $1E, $19, $1F, $11, $12, $2B
-L8554:  .byte $80, $FE, $01, $0E, $19, $0D, $27, $2A, $81, $60, $FC, $FA, $FC, $F9, $0A, $29
-L8564:  .byte $0E, $19, $18, $26, $1E, $FF, $11, $13, $20, $0F, $80, $FE, $01, $1F, $1A, $2B
-L8574:  .byte $FF, $17, $0B, $0D, $27, $80, $FE, $01, $17, $0B, $15, $0F, $FF, $12, $13, $17
-L8584:  .byte $80, $FE, $01, $0D, $16, $19, $1D, $0F, $FF, $12, $13, $1D, $80, $FE, $01, $0C
-L8594:  .byte $13, $11, $FF, $17, $19, $1F, $1E, $12, $2A, $81, $60, $FC, $FA, $FC, $F9, $09
-L85A4:  .byte $29, $0C, $13, $11, $FF, $17, $19, $1F, $1E, $12, $30, $80, $FE, $01, $0D, $19
-L85B4:  .byte $17, $0F, $FF, $19, $18, $80, $FE, $01, $0E, $19, $0D, $27, $80, $FE, $01, $1E
-L85C4:  .byte $0F, $0B, $0D, $12, $FF, $17, $0F, $80, $FE, $01, $17, $19, $1C, $0F, $25, $25
-L85D4:  .byte $25, $2A, $00
+.byte SFX, SQ1_TALK1
+.byte "<HIS", EOL, ADVANCE, $01
+.byte "DEFENSE IS", EOL, ADVANCE, $01
+.byte "TOO TOUGH,", EOL, ADVANCE, $01
+.byte "DOC!>", SLEEP, $60
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte SFX, SQ1_TALK2
+.byte "<DON'T GIVE", EOL, ADVANCE, $01
+.byte "UP, MAC!", EOL, ADVANCE, $01
+.byte "MAKE HIM", EOL, ADVANCE, $01
+.byte "CLOSE HIS", EOL, ADVANCE, $01
+.byte "BIG MOUTH>", SLEEP, $60
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte SFX, SQ1_TALK1
+.byte "<BIG MOUTH?", EOL, ADVANCE, $01
+.byte "COME ON", EOL, ADVANCE, $01
+.byte "DOC!", EOL, ADVANCE, $01
+.byte "TEACH ME", EOL, ADVANCE, $01
+.byte "MORE...>", EOM
 
 ;; "HIS FATHER WAS A GREAT MAGICIAN IN INDIA. DON'T BE CHARMED BY HIS MAGIC PUNCHES."
 DocMsg16:
-L85D7:  .byte $29, $12, $13, $1D, $FF, $10, $0B, $1E, $12, $0F, $1C, $80, $FE, $01, $21, $0B
-L85E7:  .byte $1D, $FF, $0B, $80, $FE, $01, $11, $1C, $0F, $0B, $1E, $80, $FE, $01, $17, $0B
-L85F7:  .byte $11, $13, $0D, $13, $0B, $18, $80, $FE, $01, $13, $18, $FF, $13, $18, $0E, $13
-L8607:  .byte $0B, $25, $2A, $81, $60, $FC, $FA, $FC, $29, $0E, $19, $18, $26, $1E, $FF, $0C
-L8617:  .byte $0F, $80, $FE, $01, $0D, $12, $0B, $1C, $17, $0F, $0E, $FF, $0C, $23, $80, $FE
-L8627:  .byte $01, $12, $13, $1D, $FF, $17, $0B, $11, $13, $0D, $80, $FE, $01, $1A, $1F, $18
-L8637:  .byte $0D, $12, $0F, $1D, $25, $2A, $00
+.byte "<HIS FATHER", EOL, ADVANCE, $01
+.byte "WAS A", EOL, ADVANCE, $01
+.byte "GREAT", EOL, ADVANCE, $01
+.byte "MAGICIAN", EOL, ADVANCE, $01
+.byte "IN INDIA.>", SLEEP, $60
+.byte RESET
+.byte CLEAR
+.byte RESET
+.byte "<DON'T BE", EOL, ADVANCE, $01
+.byte "CHARMED BY", EOL, ADVANCE, $01
+.byte "HIS MAGIC", EOL, ADVANCE, $01
+.byte "PUNCHES.>", EOM
 
 ;; "MAC! WATCH HIS BULL CHARGE! STAND UP TO HIM!"
 DocMsg17:
-L863E:  .byte $29, $17, $0B, $0D, $27, $FF, $21, $0B, $1E, $0D, $12, $80, $FE, $01, $12, $13
-L864E:  .byte $1D, $FF, $0C, $1F, $16, $16, $80, $FE, $01, $0D, $12, $0B, $1C, $11, $0F, $27
-L865E:  .byte $80, $FE, $01, $1D, $1E, $0B, $18, $0E, $FF, $1F, $1A, $80, $FE, $01, $1E, $19
-L866E:  .byte $FF, $12, $13, $17, $27, $2A, $00
+.byte "<MAC! WATCH", EOL, ADVANCE, $01
+.byte "HIS BULL", EOL, ADVANCE, $01
+.byte "CHARGE!", EOL, ADVANCE, $01
+.byte "STAND UP", EOL, ADVANCE, $01
+.byte "TO HIM!>", EOM
 
 ;; "LOOK FOR TWO TYPES OF SPIN PUNCH!"
 DocMsg18:
-L8675:  .byte $29, $16, $19, $19, $15, $FF, $10, $19, $1C, $80, $FE, $01, $1E, $21, $19, $FF
-L8685:  .byte $1E, $23, $1A, $0F, $1D, $80, $FE, $01, $19, $10, $FF, $1D, $1A, $13, $18, $80
-L8695:  .byte $FE, $01, $1A, $1F, $18, $0D, $12, $27, $80, $FE, $01, $21, $0B, $1E, $0D, $12
-L86A5:  .byte $FF, $12, $13, $17, $2A, $00
+.byte "<LOOK FOR", EOL, ADVANCE, $01
+.byte "TWO TYPES", EOL, ADVANCE, $01
+.byte "OF SPIN", EOL, ADVANCE, $01
+.byte "PUNCH!", EOL, ADVANCE, $01
+.byte "WATCH HIM>", EOM
 
 ;; -----------------------------------------------------------------------------------------
 
 ;; "THIS IS MY LAST MATCH! I'M TOO OLD FOR FIGHTING!"
 OppMsg01:
-L86AB:  .byte $29, $1E, $12, $13, $1D, $FF, $13, $1D, $80, $FE, $01, $17, $23, $FF, $16, $0B
-L86BB:  .byte $1D, $1E, $80, $FE, $01, $17, $0B, $1E, $0D, $12, $27, $80, $80, $FE, $01, $13
-L86CB:  .byte $26, $17, $FF, $1E, $19, $19, $80, $FE, $01, $19, $16, $0E, $FF, $10, $19, $1C
-L86DB:  .byte $80, $FE, $01, $10, $13, $11, $12, $1E, $13, $18, $11, $27, $2A, $00
+.byte "<THIS IS", EOL, ADVANCE, $01
+.byte "MY LAST", EOL, ADVANCE, $01
+.byte "MATCH!", EOL, EOL, ADVANCE, $01
+.byte "I'M TOO", EOL, ADVANCE, $01
+.byte "OLD FOR", EOL, ADVANCE, $01
+.byte "FIGHTING!>", EOM
 
 ;; "MAKE IT QUICK... I WANT TO RETIRE!"
 OppMsg02:
-L86E9:  .byte $29, $17, $0B, $15, $0F, $FF, $13, $1E, $80, $FE, $01, $1B, $1F, $13, $0D, $15
-L86F9:  .byte $25, $25, $25, $80, $80, $FE, $01, $13, $FF, $21, $0B, $18, $1E, $80, $FE, $01
-L8709:  .byte $1E, $19, $FF, $1C, $0F, $1E, $13, $1C, $0F, $27, $2A, $00
+.byte "<MAKE IT", EOL, ADVANCE, $01
+.byte "QUICK...", EOL, EOL, ADVANCE, $01
+.byte "I WANT", EOL, ADVANCE, $01
+.byte "TO RETIRE!>", EOM
 
 ;; "WATCH THE JAW!! DON'T HIT MY JAW!"
 OppMsg03:
-L8715:  .byte $29, $21, $0B, $1E, $0D, $12, $FF, $1E, $12, $0F, $80, $FE, $01, $14, $0B, $21
-L8725:  .byte $27, $27, $80, $80, $FE, $01, $0E, $19, $18, $26, $1E, $FF, $12, $13, $1E, $80
-L8735:  .byte $FE, $01, $17, $23, $FF, $14, $0B, $21, $27, $2A, $00
+.byte "<WATCH THE", EOL, ADVANCE, $01
+.byte "JAW!!", EOL, EOL, ADVANCE, $01
+.byte "DON'T HIT", EOL, ADVANCE, $01
+.byte "MY JAW!>", EOM
 
 ;; "DO I HAVE TIME TO TAKE A NAP BEFORE THE FIGHT?"
 OppMsg04:
-L8740:  .byte $29, $0E, $19, $FF, $13, $FF, $12, $0B, $20, $0F, $80, $FE, $01, $1E, $13, $17
-L8750:  .byte $0F, $FF, $1E, $19, $80, $FE, $01, $1E, $0B, $15, $0F, $FF, $0B, $FF, $18, $0B
-L8760:  .byte $1A, $80, $FE, $01, $0C, $0F, $10, $19, $1C, $0F, $FF, $1E, $12, $0F, $80, $FE
-L8770:  .byte $01, $10, $13, $11, $12, $1E, $30, $2A, $00
+.byte "<DO I HAVE", EOL, ADVANCE, $01
+.byte "TIME TO", EOL, ADVANCE, $01
+.byte "TAKE A NAP", EOL, ADVANCE, $01
+.byte "BEFORE THE", EOL, ADVANCE, $01
+.byte "FIGHT?>", EOM
 
 ;; "I WAS A BOXING TEACHER... AT THE MILITARY ACADEMY!"
 OppMsg05:
-L8779:  .byte $29, $13, $FF, $21, $0B, $1D, $FF, $0B, $80, $FE, $01, $0C, $19, $22, $13, $18
-L8789:  .byte $11, $80, $FE, $01, $1E, $0F, $0B, $0D, $12, $0F, $1C, $25, $25, $25, $80, $FE
-L8799:  .byte $01, $25, $25, $0B, $1E, $FF, $1E, $12, $0F, $80, $FE, $01, $17, $13, $16, $13
-L87A9:  .byte $1E, $0B, $1C, $23, $80, $FE, $01, $0B, $0D, $0B, $0E, $0F, $17, $23, $27, $2A
-L87B9:  .byte $00
+.byte "<I WAS A", EOL, ADVANCE, $01
+.byte "BOXING", EOL, ADVANCE, $01
+.byte "TEACHER...", EOL, ADVANCE, $01
+.byte "..AT THE", EOL, ADVANCE, $01
+.byte "MILITARY", EOL, ADVANCE, $01
+.byte "ACADEMY!>", EOM
 
 ;; "I'LL TEACH YOU A LESSON. YOU WILL FALL DOWN!"
 OppMsg06:
-L87BA:  .byte $29, $13, $26, $16, $16, $FF, $1E, $0F, $0B, $0D, $12, $80, $FE, $01, $23, $19
-L87CA:  .byte $1F, $FF, $0B, $80, $FE, $01, $16, $0F, $1D, $1D, $19, $18, $25, $80, $80, $FE
-L87DA:  .byte $01, $23, $19, $1F, $FF, $21, $13, $16, $16, $80, $FE, $01, $10, $0B, $16, $16
-L87EA:  .byte $FF, $0E, $19, $21, $18, $27, $2A, $00
+.byte "<I'LL TEACH", EOL, ADVANCE, $01
+.byte "YOU A", EOL, ADVANCE, $01
+.byte "LESSON.", EOL, EOL, ADVANCE, $01
+.byte "YOU WILL", EOL, ADVANCE, $01
+.byte "FALL DOWN!>", EOM
 
 ;; "YOUR PUNCH IS SOFT... JUST LIKE YOUR HEART!"
 OppMsg07:
-L87F2:  .byte $29, $23, $19, $1F, $1C, $FF, $1A, $1F, $18, $0D, $12, $80, $FE, $01, $13, $1D
-L8802:  .byte $FF, $1D, $19, $10, $1E, $25, $25, $25, $80, $80, $FE, $01, $14, $1F, $1D, $1E
-L8812:  .byte $FF, $16, $13, $15, $0F, $80, $FE, $01, $23, $19, $1F, $1C, $80, $FE, $01, $12
-L8822:  .byte $0F, $0B, $1C, $1E, $27, $2A, $00
+.byte "<YOUR PUNCH", EOL, ADVANCE, $01
+.byte "IS SOFT...", EOL, EOL, ADVANCE, $01
+.byte "JUST LIKE", EOL, ADVANCE, $01
+.byte "YOUR", EOL, ADVANCE, $01
+.byte "HEART!>", EOM
 
 ;; "SURRENDER! OR I WILL CONQUER YOU!!"
 OppMsg08:
-L8829:  .byte $29, $1D, $1F, $1C, $1C, $0F, $18, $0E, $0F, $1C, $27, $80, $80, $FE, $01, $19
-L8839:  .byte $1C, $FF, $13, $FF, $21, $13, $16, $16, $80, $FE, $01, $0D, $19, $18, $1B, $1F
-L8849:  .byte $0F, $1C, $80, $FE, $01, $23, $19, $1F, $27, $27, $2A, $00
+.byte "<SURRENDER!", EOL, EOL, ADVANCE, $01
+.byte "OR I WILL", EOL, ADVANCE, $01
+.byte "CONQUER", EOL, ADVANCE, $01
+.byte "YOU!!>", EOM
 
 ;; "HA,HA,HA! I AM THE KING! HA,HA,HA!"
 OppMsg09:
-L8855:  .byte $29, $12, $0B, $2B, $12, $0B, $2B, $12, $0B, $27, $80, $80, $FE, $01, $13, $FF
-L8865:  .byte $0B, $17, $FF, $1E, $12, $0F, $80, $FE, $01, $15, $13, $18, $11, $27, $80, $80
-L8875:  .byte $FE, $01, $12, $0B, $2B, $12, $0B, $2B, $12, $0B, $27, $2A, $00
+.byte "<HA,HA,HA!", EOL, EOL, ADVANCE, $01
+.byte "I AM THE", EOL, ADVANCE, $01
+.byte "KING!", EOL, EOL, ADVANCE, $01
+.byte "HA,HA,HA!>", EOM
 
 ;; "I HAVE MY WEAKNESS. BUT I WON'T TELL YOU! HA,HA,HA!"
 OppMsg10:
-L8882:  .byte $29, $13, $FF, $12, $0B, $20, $0F, $FF, $17, $23, $80, $FE, $01, $21, $0F, $0B
-L8892:  .byte $15, $18, $0F, $1D, $1D, $25, $80, $80, $FE, $01, $0C, $1F, $1E, $FF, $13, $80
-L88A2:  .byte $FE, $01, $21, $19, $18, $26, $1E, $FF, $1E, $0F, $16, $16, $80, $FE, $01, $23
-L88B2:  .byte $19, $1F, $27, $80, $80, $FE, $01, $12, $0B, $2B, $12, $0B, $2B, $12, $0B, $27
-L88C2:  .byte $2A, $00
+.byte "<I HAVE MY", EOL, ADVANCE, $01
+.byte "WEAKNESS.", EOL, EOL, ADVANCE, $01
+.byte "BUT I", EOL, ADVANCE, $01
+.byte "WON'T TELL", EOL, ADVANCE, $01
+.byte "YOU!", EOL, EOL, ADVANCE, $01
+.byte "HA,HA,HA!>", EOM
 
 ;; "DO YOU LIKE MY NEW TRUNKS? THEY ARE SIZE XXX LARGE! HA,HA,HA!"
 OppMsg11:
-L88C4:  .byte $29, $0E, $19, $FF, $23, $19, $1F, $80, $FE, $01, $16, $13, $15, $0F, $FF, $17
-L88D4:  .byte $23, $80, $FE, $01, $18, $0F, $21, $80, $FE, $01, $1E, $1C, $1F, $18, $15, $1D
-L88E4:  .byte $30, $80, $FE, $01, $1E, $12, $0F, $23, $FF, $0B, $1C, $0F, $80, $FE, $01, $1D
-L88F4:  .byte $13, $24, $0F, $80, $FE, $01, $22, $22, $22, $FF, $16, $0B, $1C, $11, $0F, $27
-L8904:  .byte $80, $80, $FE, $01, $12, $0B, $2B, $12, $0B, $2B, $12, $0B, $27, $2A, $00
+.byte "<DO YOU", EOL, ADVANCE, $01
+.byte "LIKE MY", EOL, ADVANCE, $01
+.byte "NEW", EOL, ADVANCE, $01
+.byte "TRUNKS?", EOL, ADVANCE, $01
+.byte "THEY ARE", EOL, ADVANCE, $01
+.byte "SIZE", EOL, ADVANCE, $01
+.byte "XXX LARGE!", EOL, EOL, ADVANCE, $01
+.byte "HA,HA,HA!>", EOM
 
 ;; "I FEEL LIKE EATING. AFTER I WIN LET'S GO TO LUNCH! HA,HA,HA!"
 OppMsg12:
-L8913:  .byte $29, $13, $FF, $10, $0F, $0F, $16, $80, $FE, $01, $16, $13, $15, $0F, $80, $FE
-L8923:  .byte $01, $0F, $0B, $1E, $13, $18, $11, $25, $80, $FE, $01, $0B, $10, $1E, $0F, $1C
-L8933:  .byte $FF, $13, $80, $FE, $01, $21, $13, $18, $FF, $16, $0F, $1E, $26, $1D, $80, $FE
-L8943:  .byte $01, $11, $19, $FF, $1E, $19, $80, $FE, $01, $16, $1F, $18, $0D, $12, $27, $80
-L8953:  .byte $80, $FE, $01, $12, $0B, $2B, $12, $0B, $2B, $12, $0B, $27, $2A, $00
+.byte "<I FEEL", EOL, ADVANCE, $01
+.byte "LIKE", EOL, ADVANCE, $01
+.byte "EATING.", EOL, ADVANCE, $01
+.byte "AFTER I", EOL, ADVANCE, $01
+.byte "WIN LET'S", EOL, ADVANCE, $01
+.byte "GO TO", EOL, ADVANCE, $01
+.byte "LUNCH!", EOL, EOL, ADVANCE, $01
+.byte "HA,HA,HA!>", EOM
 
 ;; "YOU SHOULD WEAR A HELMET WHEN YOU FIGHT ME!"
 OppMsg13:
-L8961:  .byte $29, $23, $19, $1F, $FF, $1D, $12, $19, $1F, $16, $0E, $80, $FE, $01, $21, $0F
-L8971:  .byte $0B, $1C, $FF, $0B, $80, $FE, $01, $12, $0F, $16, $17, $0F, $1E, $80, $FE, $01
-L8981:  .byte $21, $12, $0F, $18, $FF, $23, $19, $1F, $80, $FE, $01, $10, $13, $11, $12, $1E
-L8991:  .byte $FF, $17, $0F, $27, $2A, $00
+.byte "<YOU SHOULD", EOL, ADVANCE, $01
+.byte "WEAR A", EOL, ADVANCE, $01
+.byte "HELMET", EOL, ADVANCE, $01
+.byte "WHEN YOU", EOL, ADVANCE, $01
+.byte "FIGHT ME!>", EOM
 
 ;; "WHERE IS THE NHK TV CAMERA? HELLO, TOKYO!"
 OppMsg14:
-L8997:  .byte $29, $21, $12, $0F, $1C, $0F, $FF, $13, $1D, $80, $FE, $01, $1E, $12, $0F, $FF
-L89A7:  .byte $18, $12, $15, $FF, $1E, $20, $80, $FE, $01, $0D, $0B, $17, $0F, $1C, $0B, $30
-L89B7:  .byte $80, $80, $FE, $01, $12, $0F, $16, $16, $19, $2B, $80, $FE, $01, $1E, $19, $15
-L89C7:  .byte $23, $19, $27, $2A, $00
+.byte "<WHERE IS", EOL, ADVANCE, $01
+.byte "THE NHK TV", EOL, ADVANCE, $01
+.byte "CAMERA?", EOL, EOL, ADVANCE, $01
+.byte "HELLO,", EOL, ADVANCE, $01
+.byte "TOKYO!>", EOM
 
 ;; "I STILL REMEMBER OUR FIRST FIGHT. NOW I'M GONNA PAY YOU BACK. BANZAI!"
 OppMsg15:
-L89CC:  .byte $29, $13, $FF, $1D, $1E, $13, $16, $16, $80, $FE, $01, $1C, $0F, $17, $0F, $17
-L89DC:  .byte $0C, $0F, $1C, $80, $FE, $01, $19, $1F, $1C, $FF, $10, $13, $1C, $1D, $1E, $80
-L89EC:  .byte $FE, $01, $10, $13, $11, $12, $1E, $25, $80, $80, $FE, $01, $18, $19, $21, $FF
-L89FC:  .byte $13, $26, $17, $80, $FE, $01, $11, $19, $18, $18, $0B, $FF, $1A, $0B, $23, $80
-L8A0C:  .byte $FE, $01, $23, $19, $1F, $FF, $0C, $0B, $0D, $15, $25, $80, $FE, $01, $0C, $0B
-L8A1C:  .byte $18, $24, $0B, $13, $27, $27, $2A, $00
+.byte "<I STILL", EOL, ADVANCE, $01
+.byte "REMEMBER", EOL, ADVANCE, $01
+.byte "OUR FIRST", EOL, ADVANCE, $01
+.byte "FIGHT.", EOL, EOL, ADVANCE, $01
+.byte "NOW I'M", EOL, ADVANCE, $01
+.byte "GONNA PAY", EOL, ADVANCE, $01
+.byte "YOU BACK.", EOL, ADVANCE, $01
+.byte "BANZAI!!>", EOM
 
 ;; "I'LL GIVE YOU A TKO FROM TOKYO!"
 OppMsg16:
-L8A24:  .byte $29, $13, $26, $16, $16, $FF, $11, $13, $20, $0F, $80, $FE, $01, $23, $19, $1F
-L8A34:  .byte $FF, $0B, $FF, $1E, $15, $19, $80, $FE, $01, $10, $1C, $19, $17, $80, $FE, $01
-L8A44:  .byte $1E, $19, $15, $23, $19, $27, $2A, $00
+.byte "<I'LL GIVE", EOL, ADVANCE, $01
+.byte "YOU A TKO", EOL, ADVANCE, $01
+.byte "FROM", EOL, ADVANCE, $01
+.byte "TOKYO!>", EOM
 
 ;; "SUSHI, KAMIKAZE, FUJIYAMA, NIPPON-ICHI"
 OppMsg17:
-L8A4B:  .byte $29, $1D, $1F, $1D, $12, $13, $2B, $80, $FE, $01, $15, $0B, $17, $13, $15, $0B
-L8A5B:  .byte $24, $0F, $2B, $80, $FE, $01, $10, $1F, $14, $13, $23, $0B, $17, $0B, $2B, $80
-L8A6B:  .byte $FE, $01, $18, $13, $1A, $1A, $19, $18, $28, $80, $FE, $01, $13, $0D, $12, $13
-L8A7B:  .byte $25, $25, $25, $2A, $00
+.byte "<SUSHI,", EOL, ADVANCE, $01
+.byte "KAMIKAZE,", EOL, ADVANCE, $01
+.byte "FUJIYAMA,", EOL, ADVANCE, $01
+.byte "NIPPON-", EOL, ADVANCE, $01
+.byte "ICHI...>", EOM
 
 ;; "SO A PUSSYCAT WANTS TO FIGHT A TIGER!"
 OppMsg18:
-L8A81:  .byte $29, $1D, $19, $FF, $0B, $80, $FE, $01, $1A, $1F, $1D, $1D, $23, $0D, $0B, $1E
-L8A91:  .byte $80, $FE, $01, $21, $0B, $18, $1E, $1D, $FF, $1E, $19, $80, $FE, $01, $10, $13
-L8AA1:  .byte $11, $12, $1E, $FF, $0B, $80, $FE, $01, $1E, $13, $11, $0F, $1C, $27, $2A, $00
+.byte "<SO A", EOL, ADVANCE, $01
+.byte "PUSSYCAT", EOL, ADVANCE, $01
+.byte "WANTS TO", EOL, ADVANCE, $01
+.byte "FIGHT A", EOL, ADVANCE, $01
+.byte "TIGER!>", EOM
 
 ;; "BEWARE MY TIGER PUNCH!"
 OppMsg19:
-L8AB1:  .byte $29, $0C, $0F, $21, $0B, $1C, $0F, $80, $FE, $01, $17, $23, $FF, $1E, $13, $11
-L8AC1:  .byte $0F, $1C, $80, $FE, $01, $1A, $1F, $18, $0D, $12, $27, $2A, $00
+.byte "<BEWARE", EOL, ADVANCE, $01
+.byte "MY TIGER", EOL, ADVANCE, $01
+.byte "PUNCH!>", EOM
 
 ;; "FLAMENCO STRIKES BACK!! RETURN OF DON!!"
 OppMsg20:
-L8ACE:  .byte $29, $10, $16, $0B, $17, $0F, $18, $0D, $19, $80, $FE, $01, $1D, $1E, $1C, $13
-L8ADE:  .byte $15, $0F, $1D, $80, $FE, $01, $0C, $0B, $0D, $15, $27, $27, $80, $80, $FE, $01
-L8AEE:  .byte $1C, $0F, $1E, $1F, $1C, $18, $FF, $19, $10, $80, $FE, $01, $0E, $19, $18, $27
-L8AFE:  .byte $27, $2A, $00
+.byte "<FLAMENCO", EOL, ADVANCE, $01
+.byte "STRIKES", EOL, ADVANCE, $01
+.byte "BACK!!", EOL, EOL, ADVANCE, $01
+.byte "RETURN OF", EOL, ADVANCE, $01
+.byte "DON!!>", EOM
 
 ;; "A KITTEN IS NO MATCH FOR A TIGER!"
 OppMsg21:
-L8B01:  .byte $29, $0B, $FF, $15, $13, $1E, $1E, $0F, $18, $80, $FE, $01, $13, $1D, $FF, $18
-L8B11:  .byte $19, $80, $FE, $01, $17, $0B, $1E, $0D, $12, $FF, $10, $19, $1C, $80, $FE, $01
-L8B21:  .byte $0B, $FF, $1E, $13, $11, $0F, $1C, $27, $2A, $00
+.byte "<A KITTEN", EOL, ADVANCE, $01
+.byte "IS NO", EOL, ADVANCE, $01
+.byte "MATCH FOR", EOL, ADVANCE, $01
+.byte "A TIGER!>", EOM
 
 ;; "I HAVE PURRED LONG ENOUGH. NOW HEAR ME ROAR!"
 OppMsg22:
-L8B2B:  .byte $29, $13, $FF, $12, $0B, $20, $0F, $80, $FE, $01, $1A, $1F, $1C, $1C, $0F, $0E
-L8B3B:  .byte $80, $FE, $01, $16, $19, $18, $11, $80, $FE, $01, $0F, $18, $19, $1F, $11, $12
-L8B4B:  .byte $25, $80, $80, $FE, $01, $18, $19, $21, $FF, $12, $0F, $0B, $1C, $80, $FE, $01
-L8B5B:  .byte $17, $0F, $FF, $1C, $19, $0B, $1C, $27, $2A, $00
+.byte "<I HAVE", EOL, ADVANCE, $01
+.byte "PURRED", EOL, ADVANCE, $01
+.byte "LONG", EOL, ADVANCE, $01
+.byte "ENOUGH.", EOL, EOL, ADVANCE, $01
+.byte "NOW HEAR", EOL, ADVANCE, $01
+.byte "ME ROAR!>", EOM
 
 ;; "DOC CAN'T HELP YOU NOW. WILL YOU BEG ME FOR HELP?"
 OppMsg23:
-L8B65:  .byte $29, $0E, $19, $0D, $FF, $0D, $0B, $18, $26, $1E, $80, $FE, $01, $12, $0F, $16
-L8B75:  .byte $1A, $FF, $23, $19, $1F, $80, $FE, $01, $18, $19, $21, $25, $80, $80, $FE, $01
-L8B85:  .byte $21, $13, $16, $16, $FF, $23, $19, $1F, $80, $FE, $01, $0C, $0F, $11, $FF, $17
-L8B95:  .byte $0F, $FF, $10, $19, $1C, $80, $FE, $01, $12, $0F, $16, $1A, $30, $2A, $00
+.byte "<DOC CAN'T", EOL, ADVANCE, $01
+.byte "HELP YOU", EOL, ADVANCE, $01
+.byte "NOW.", EOL, EOL, ADVANCE, $01
+.byte "WILL YOU", EOL, ADVANCE, $01
+.byte "BEG ME FOR", EOL, ADVANCE, $01
+.byte "HELP?>", EOM
 
 ;; "HEY!LITTLE MAC! MAYBE DOC SHOULD THROW YOU A TOWEL!"
 OppMsg24:
-L8BA4:  .byte $29, $12, $0F, $23, $27, $16, $13, $1E, $1E, $16, $0F, $80, $FE, $01, $17, $0B
-L8BB4:  .byte $0D, $27, $80, $80, $FE, $01, $17, $0B, $23, $0C, $0F, $FF, $0E, $19, $0D, $80
-L8BC4:  .byte $FE, $01, $1D, $12, $19, $1F, $16, $0E, $80, $FE, $01, $1E, $12, $1C, $19, $21
-L8BD4:  .byte $FF, $23, $19, $1F, $80, $FE, $01, $0B, $FF, $1E, $19, $21, $0F, $16, $27, $2A
-L8BE4:  .byte $00
+.byte "<HEY!LITTLE", EOL, ADVANCE, $01
+.byte "MAC!", EOL, EOL, ADVANCE, $01
+.byte "MAYBE DOC", EOL, ADVANCE, $01
+.byte "SHOULD", EOL, ADVANCE, $01
+.byte "THROW YOU", EOL, ADVANCE, $01
+.byte "A TOWEL!>", EOM
 
 ;; "MY BARBER DIDN'T KNOW WHEN TO QUIT... DO YOU?"
 OppMsg25:
-L8BE5:  .byte $29, $17, $23, $FF, $0C, $0B, $1C, $0C, $0F, $1C, $80, $FE, $01, $0E, $13, $0E
-L8BF5:  .byte $18, $26, $1E, $80, $FE, $01, $15, $18, $19, $21, $FF, $21, $12, $0F, $18, $80
-L8C05:  .byte $FE, $01, $1E, $19, $FF, $1B, $1F, $13, $1E, $25, $25, $25, $80, $80, $FE, $01
-L8C15:  .byte $0E, $19, $FF, $23, $19, $1F, $30, $2A, $00
+.byte "<MY BARBER", EOL, ADVANCE, $01
+.byte "DIDN'T", EOL, ADVANCE, $01
+.byte "KNOW WHEN", EOL, ADVANCE, $01
+.byte "TO QUIT...", EOL, EOL, ADVANCE, $01
+.byte "DO YOU?>", EOM
 
 ;; "ZIP YOUR LIP,DOC! LITTLE MAC IS MINE NOW."
 OppMsg26:
-L8C1E:  .byte $29, $24, $13, $1A, $FF, $23, $19, $1F, $1C, $80, $FE, $01, $16, $13, $1A, $2B
-L8C2E:  .byte $0E, $19, $0D, $27, $80, $80, $FE, $01, $16, $13, $1E, $1E, $16, $0F, $FF, $17
-L8C3E:  .byte $0B, $0D, $80, $FE, $01, $13, $1D, $FF, $17, $13, $18, $0F, $80, $FE, $01, $18
-L8C4E:  .byte $19, $21, $25, $2A, $00
+.byte "<ZIP YOUR", EOL, ADVANCE, $01
+.byte "LIP,DOC!", EOL, EOL, ADVANCE, $01
+.byte "LITTLE MAC", EOL, ADVANCE, $01
+.byte "IS MINE", EOL, ADVANCE, $01
+.byte "NOW.>", EOM
 
 ;; "I CAN'T DRIVE, SO I'M GONNA WALK ALL OVER YOU!"
 OppMsg27:
-L8C53:  .byte $29, $13, $FF, $0D, $0B, $18, $26, $1E, $80, $FE, $01, $0E, $1C, $13, $20, $0F
-L8C63:  .byte $2B, $80, $FE, $01, $1D, $19, $FF, $13, $26, $17, $80, $FE, $01, $11, $19, $18
-L8C73:  .byte $18, $0B, $FF, $21, $0B, $16, $15, $80, $FE, $01, $0B, $16, $16, $FF, $19, $20
-L8C83:  .byte $0F, $1C, $80, $FE, $01, $23, $19, $1F, $27, $2A, $00
+.byte "<I CAN'T", EOL, ADVANCE, $01
+.byte "DRIVE,", EOL, ADVANCE, $01
+.byte "SO I'M", EOL, ADVANCE, $01
+.byte "GONNA WALK", EOL, ADVANCE, $01
+.byte "ALL OVER", EOL, ADVANCE, $01
+.byte "YOU!>", EOM
 
 ;; "WOULD YOU LIKE SOME PUNCH TO DRINK? HA,HA,HA!"
 OppMsg28:
-L8C8E:  .byte $29, $21, $19, $1F, $16, $0E, $FF, $23, $19, $1F, $80, $FE, $01, $16, $13, $15
-L8C9E:  .byte $0F, $FF, $1D, $19, $17, $0F, $80, $FE, $01, $1A, $1F, $18, $0D, $12, $FF, $1E
-L8CAE:  .byte $19, $80, $FE, $01, $0E, $1C, $13, $18, $15, $30, $80, $FE, $01, $12, $0B, $2B
-L8CBE:  .byte $12, $0B, $2B, $12, $0B, $27, $2A, $00
+.byte "<WOULD YOU", EOL, ADVANCE, $01
+.byte "LIKE SOME", EOL, ADVANCE, $01
+.byte "PUNCH TO", EOL, ADVANCE, $01
+.byte "DRINK?", EOL, ADVANCE, $01
+.byte "HA,HA,HA!>", EOM
 
 ;; "I'M GONNA MAKE YOU FEEL PUNCH DRUNK!"
 OppMsg29:
-L8CC6:  .byte $29, $13, $26, $17, $FF, $11, $19, $18, $18, $0B, $80, $FE, $01, $17, $0B, $15
-L8CD6:  .byte $0F, $FF, $23, $19, $1F, $80, $FE, $01, $10, $0F, $0F, $16, $80, $FE, $01, $1A
-L8CE6:  .byte $1F, $18, $0D, $12, $80, $FE, $01, $0E, $1C, $1F, $18, $15, $27, $2A, $00
+.byte "<I'M GONNA", EOL, ADVANCE, $01
+.byte "MAKE YOU", EOL, ADVANCE, $01
+.byte "FEEL", EOL, ADVANCE, $01
+.byte "PUNCH", EOL, ADVANCE, $01
+.byte "DRUNK!>", EOM
 
 ;; "AFTER YOU LOSE,WE'LL DRINK TO YOUR HEALTH! HA,HA,HA!"
 OppMsg30:
-L8CF5:  .byte $29, $0B, $10, $1E, $0F, $1C, $FF, $23, $19, $1F, $80, $FE, $01, $16, $19, $1D
-L8D05:  .byte $0F, $2B, $21, $0F, $26, $16, $16, $80, $FE, $01, $0E, $1C, $13, $18, $15, $FF
-L8D15:  .byte $1E, $19, $80, $FE, $01, $23, $19, $1F, $1C, $80, $FE, $01, $12, $0F, $0B, $16
-L8D25:  .byte $1E, $12, $27, $80, $80, $FE, $01, $12, $0B, $2B, $12, $0B, $2B, $12, $0B, $27
-L8D35:  .byte $2A, $00
+.byte "<AFTER YOU", EOL, ADVANCE, $01
+.byte "LOSE,WE'LL", EOL, ADVANCE, $01
+.byte "DRINK TO", EOL, ADVANCE, $01
+.byte "YOUR", EOL, ADVANCE, $01
+.byte "HEALTH!", EOL, EOL, ADVANCE, $01
+.byte "HA,HA,HA!>", EOM
 
 ;; "I DRINK TO PREPARE FOR A FIGHT. TONIGHT I AM VERY PREPARED!"
 OppMsg31:
-L8D37:  .byte $29, $13, $FF, $0E, $1C, $13, $18, $15, $FF, $1E, $19, $80, $FE, $01, $1A, $1C
-L8D47:  .byte $0F, $1A, $0B, $1C, $0F, $80, $FE, $01, $10, $19, $1C, $FF, $0B, $80, $FE, $01
-L8D57:  .byte $10, $13, $11, $12, $1E, $25, $80, $80, $FE, $01, $1E, $19, $18, $13, $11, $12
-L8D67:  .byte $1E, $FF, $13, $80, $FE, $01, $0B, $17, $FF, $20, $0F, $1C, $23, $80, $FE, $01
-L8D77:  .byte $1A, $1C, $0F, $1A, $0B, $1C, $0F, $0E, $27, $2A, $00
+.byte "<I DRINK TO", EOL, ADVANCE, $01
+.byte "PREPARE", EOL, ADVANCE, $01
+.byte "FOR A", EOL, ADVANCE, $01
+.byte "FIGHT.", EOL, EOL, ADVANCE, $01
+.byte "TONIGHT I", EOL, ADVANCE, $01
+.byte "AM VERY", EOL, ADVANCE, $01
+.byte "PREPARED!>", EOM
 
 ;; "HEY! MAC BABY... SAY GOODNIGHT!"
 OppMsg32:
-L8D82:  .byte $29, $12, $0F, $23, $27, $80, $FE, $01, $17, $0B, $0D, $FF, $0C, $0B, $0C, $23
-L8D92:  .byte $25, $25, $25, $80, $80, $FE, $01, $1D, $0B, $23, $80, $FE, $01, $11, $19, $19
-L8DA2:  .byte $0E, $18, $13, $11, $12, $1E, $27, $2A, $00
+.byte "<HEY!", EOL, ADVANCE, $01
+.byte "MAC BABY...", EOL, EOL, ADVANCE, $01
+.byte "SAY", EOL, ADVANCE, $01
+.byte "GOODNIGHT!>", EOM
 
 ;; "WELCOME TO DREAMLAND, BABY!"
 OppMsg33:
-L8DAB:  .byte $29, $21, $0F, $16, $0D, $19, $17, $0F, $80, $FE, $01, $1E, $19, $80, $FE, $01
-L8DBB:  .byte $0E, $1C, $0F, $0B, $17, $16, $0B, $18, $0E, $2B, $80, $FE, $01, $0C, $0B, $0C
-L8DCB:  .byte $23, $27, $2A, $00
+.byte "<WELCOME", EOL, ADVANCE, $01
+.byte "TO", EOL, ADVANCE, $01
+.byte "DREAMLAND,", EOL, ADVANCE, $01
+.byte "BABY!>", EOM
 
 ;; "THIS TIME I'M GONNA CHARGE RIGHT OVER YOU!"
 OppMsg34:
-L8DCF:  .byte $29, $1E, $12, $13, $1D, $FF, $1E, $13, $17, $0F, $80, $FE, $01, $13, $26, $17
-L8DDF:  .byte $FF, $11, $19, $18, $18, $0B, $80, $FE, $01, $0D, $12, $0B, $1C, $11, $0F, $80
-L8DEF:  .byte $FE, $01, $1C, $13, $11, $12, $1E, $FF, $19, $20, $0F, $1C, $80, $FE, $01, $23
-L8DFF:  .byte $19, $1F, $27, $2A, $00
+.byte "<THIS TIME", EOL, ADVANCE, $01
+.byte "I'M GONNA", EOL, ADVANCE, $01
+.byte "CHARGE", EOL, ADVANCE, $01
+.byte "RIGHT OVER", EOL, ADVANCE, $01
+.byte "YOU!>", EOM
 
 ;; "I THINK YOU'RE GONNA HAVE A NIGHTMARE TONIGHT!"
 OppMsg35:
-L8E04:  .byte $29, $13, $FF, $1E, $12, $13, $18, $15, $80, $FE, $01, $23, $19, $1F, $26, $1C
-L8E14:  .byte $0F, $80, $FE, $01, $11, $19, $18, $18, $0B, $80, $FE, $01, $12, $0B, $20, $0F
-L8E24:  .byte $FF, $0B, $80, $FE, $01, $18, $13, $11, $12, $1E, $17, $0B, $1C, $0F, $80, $FE
-L8E34:  .byte $01, $1E, $19, $18, $13, $11, $12, $1E, $27, $2A, $00
+.byte "<I THINK", EOL, ADVANCE, $01
+.byte "YOU'RE", EOL, ADVANCE, $01
+.byte "GONNA", EOL, ADVANCE, $01
+.byte "HAVE A", EOL, ADVANCE, $01
+.byte "NIGHTMARE", EOL, ADVANCE, $01
+.byte "TONIGHT!>", EOM
 
 ;; "BEDTIME FOR LITTLE MAC!"
 OppMsg36:
-L8E3F:  .byte $29, $0C, $0F, $0E, $1E, $13, $17, $0F, $80, $FE, $01, $10, $19, $1C, $FF, $16
-L8E4F:  .byte $13, $1E, $1E, $16, $0F, $80, $FE, $01, $17, $0B, $0D, $27, $2A, $00
+.byte "<BEDTIME", EOL, ADVANCE, $01
+.byte "FOR LITTLE", EOL, ADVANCE, $01
+.byte "MAC!>", EOM
 
 ;; "I'M A BEAUTIFUL FIGHTER. I HAVE SUCH A STYLE!"
 OppMsg37:
-L8E5D:  .byte $29, $13, $26, $17, $FF, $0B, $80, $FE, $01, $0C, $0F, $0B, $1F, $1E, $13, $10
-L8E6D:  .byte $1F, $16, $80, $FE, $01, $10, $13, $11, $12, $1E, $0F, $1C, $25, $80, $80, $FE
-L8E7D:  .byte $01, $13, $FF, $12, $0B, $20, $0F, $80, $FE, $01, $1D, $1F, $0D, $12, $FF, $0B
-L8E8D:  .byte $80, $FE, $01, $1D, $1E, $23, $16, $0F, $27, $2A, $00
+.byte "<I'M A", EOL, ADVANCE, $01
+.byte "BEAUTIFUL", EOL, ADVANCE, $01
+.byte "FIGHTER.", EOL, EOL, ADVANCE, $01
+.byte "I HAVE", EOL, ADVANCE, $01
+.byte "SUCH A", EOL, ADVANCE, $01
+.byte "STYLE!>", EOM
 
 ;; "PEOPLE LIKE MY HAIR. DON'T MESS MY HAIR!"
 OppMsg38:
-L8E98:  .byte $29, $1A, $0F, $19, $1A, $16, $0F, $80, $FE, $01, $16, $13, $15, $0F, $FF, $17
-L8EA8:  .byte $23, $80, $FE, $01, $12, $0B, $13, $1C, $25, $80, $80, $FE, $01, $0E, $19, $18
-L8EB8:  .byte $26, $1E, $FF, $17, $0F, $1D, $1D, $80, $FE, $01, $17, $23, $FF, $12, $0B, $13
-L8EC8:  .byte $1C, $27, $2A, $00
+.byte "<PEOPLE", EOL, ADVANCE, $01
+.byte "LIKE MY", EOL, ADVANCE, $01
+.byte "HAIR.", EOL, EOL, ADVANCE, $01
+.byte "DON'T MESS", EOL, ADVANCE, $01
+.byte "MY HAIR!>", EOM
 
 ;; "CARMEN, MY LOVE... I DANCE SO SWEET FOR YOU!"
 OppMsg39:
-L8ECC:  .byte $29, $0D, $0B, $1C, $17, $0F, $18, $2B, $80, $FE, $01, $17, $23, $FF, $16, $19
-L8EDC:  .byte $20, $0F, $25, $25, $25, $80, $80, $FE, $01, $13, $FF, $0E, $0B, $18, $0D, $0F
-L8EEC:  .byte $80, $FE, $01, $1D, $19, $FF, $1D, $21, $0F, $0F, $1E, $80, $FE, $01, $10, $19
-L8EFC:  .byte $1C, $FF, $23, $19, $1F, $27, $2A, $00
+.byte "<CARMEN,", EOL, ADVANCE, $01
+.byte "MY LOVE...", EOL, EOL, ADVANCE, $01
+.byte "I DANCE", EOL, ADVANCE, $01
+.byte "SO SWEET", EOL, ADVANCE, $01
+.byte "FOR YOU!>", EOM
 
 ;; "HEY!MR. REFEREE MARIO... I LIKE YOUR HAIR!"
 OppMsg40:
-L8F04:  .byte $29, $12, $0F, $23, $27, $17, $1C, $25, $80, $FE, $01, $1C, $0F, $10, $0F, $1C
-L8F14:  .byte $0F, $0F, $80, $FE, $01, $17, $0B, $1C, $13, $19, $25, $25, $25, $80, $80, $FE
-L8F24:  .byte $01, $13, $FF, $16, $13, $15, $0F, $80, $FE, $01, $23, $19, $1F, $1C, $FF, $12
-L8F34:  .byte $0B, $13, $1C, $27, $2A, $00
+.byte "<HEY!MR.", EOL, ADVANCE, $01
+.byte "REFEREE", EOL, ADVANCE, $01
+.byte "MARIO...", EOL, EOL, ADVANCE, $01
+.byte "I LIKE", EOL, ADVANCE, $01
+.byte "YOUR HAIR!>", EOM
 
 ;; "I WORK ON MY TAN HARDER THAN I'LL HAVE TO WORK ON YOU!"
 OppMsg41:
-L8F3A:  .byte $29, $13, $FF, $21, $19, $1C, $15, $FF, $19, $18, $80, $FE, $01, $17, $23, $FF
-L8F4A:  .byte $1E, $0B, $18, $80, $FE, $01, $12, $0B, $1C, $0E, $0F, $1C, $80, $FE, $01, $1E
-L8F5A:  .byte $12, $0B, $18, $FF, $13, $26, $16, $16, $80, $FE, $01, $12, $0B, $20, $0F, $FF
-L8F6A:  .byte $1E, $19, $80, $FE, $01, $21, $19, $1C, $15, $FF, $19, $18, $80, $FE, $01, $23
-L8F7A:  .byte $19, $1F, $27, $2A, $00
+.byte "<I WORK ON", EOL, ADVANCE, $01
+.byte "MY TAN", EOL, ADVANCE, $01
+.byte "HARDER", EOL, ADVANCE, $01
+.byte "THAN I'LL", EOL, ADVANCE, $01
+.byte "HAVE TO", EOL, ADVANCE, $01
+.byte "WORK ON", EOL, ADVANCE, $01
+.byte "YOU!>", EOM
 
 ;; "I DON'T SMOKE. BUT TONIGHT I'M GONNA SMOKE YOU!"
 OppMsg42:
-L8F7F:  .byte $29, $13, $FF, $0E, $19, $18, $26, $1E, $80, $FE, $01, $1D, $17, $19, $15, $0F
-L8F8F:  .byte $25, $25, $25, $80, $80, $FE, $01, $0C, $1F, $1E, $80, $FE, $01, $1E, $19, $18
-L8F9F:  .byte $13, $11, $12, $1E, $80, $FE, $01, $13, $26, $17, $FF, $11, $19, $18, $18, $0B
-L8FAF:  .byte $80, $FE, $01, $1D, $17, $19, $15, $0F, $FF, $23, $19, $1F, $27, $2A, $00
+.byte "<I DON'T", EOL, ADVANCE, $01
+.byte "SMOKE...", EOL, EOL, ADVANCE, $01
+.byte "BUT", EOL, ADVANCE, $01
+.byte "TONIGHT", EOL, ADVANCE, $01
+.byte "I'M GONNA", EOL, ADVANCE, $01
+.byte "SMOKE YOU!>", EOM
 
 ;; "MY BODY IS JUST SO TOTALLY COOL!"
 OppMsg43:
-L8FBE:  .byte $29, $17, $23, $FF, $0C, $19, $0E, $23, $80, $FE, $01, $13, $1D, $FF, $14, $1F
-L8FCE:  .byte $1D, $1E, $80, $FE, $01, $1D, $19, $FF, $1E, $19, $1E, $0B, $16, $16, $23, $80
-L8FDE:  .byte $FE, $01, $0D, $19, $19, $16, $27, $2A, $00
+.byte "<MY BODY", EOL, ADVANCE, $01
+.byte "IS JUST", EOL, ADVANCE, $01
+.byte "SO TOTALLY", EOL, ADVANCE, $01
+.byte "COOL!>", EOM
 
 ;; "MY SUPER SPIN PUNCH IS TOTALLY TOUGH!"
 OppMsg44:
-L8FE7:  .byte $29, $17, $23, $FF, $1D, $1F, $1A, $0F, $1C, $80, $FE, $01, $1D, $1A, $13, $18
-L8FF7:  .byte $FF, $1A, $1F, $18, $0D, $12, $80, $FE, $01, $13, $1D, $FF, $1E, $19, $1E, $0B
-L9007:  .byte $16, $16, $23, $80, $FE, $01, $1E, $19, $1F, $11, $12, $27, $2A, $00
+.byte "<MY SUPER", EOL, ADVANCE, $01
+.byte "SPIN PUNCH", EOL, ADVANCE, $01
+.byte "IS TOTALLY", EOL, ADVANCE, $01
+.byte "TOUGH!>", EOM
 
 ;; "YOU THINK THE SPEED OF YOUR FINGERS CAN MATCH THE STRENGTH OF MY FISTS?"
 OppMsg45:
-L9015:  .byte $29, $23, $19, $1F, $FF, $1E, $12, $13, $18, $15, $80, $FE, $01, $1E, $12, $0F
-L9025:  .byte $FF, $1D, $1A, $0F, $0F, $0E, $80, $FE, $01, $19, $10, $FF, $23, $19, $1F, $1C
-L9035:  .byte $80, $FE, $01, $10, $13, $18, $11, $0F, $1C, $1D, $80, $FE, $01, $0D, $0B, $18
-L9045:  .byte $FF, $17, $0B, $1E, $0D, $12, $80, $FE, $01, $1E, $12, $0F, $80, $FE, $01, $1D
-L9055:  .byte $1E, $1C, $0F, $18, $11, $1E, $12, $80, $FE, $01, $19, $10, $FF, $17, $23, $80
-L9065:  .byte $FE, $01, $10, $13, $1D, $1E, $1D, $30, $2A, $00
+.byte "<YOU THINK", EOL, ADVANCE, $01
+.byte "THE SPEED", EOL, ADVANCE, $01
+.byte "OF YOUR", EOL, ADVANCE, $01
+.byte "FINGERS", EOL, ADVANCE, $01
+.byte "CAN MATCH", EOL, ADVANCE, $01
+.byte "THE", EOL, ADVANCE, $01
+.byte "STRENGTH", EOL, ADVANCE, $01
+.byte "OF MY", EOL, ADVANCE, $01
+.byte "FISTS?>", EOM
 
 ;; "IF I KNOCK YOU DOWN, DON'T GET UP!"
 OppMsg46:
-L906F:  .byte $29, $13, $10, $FF, $13, $FF, $15, $18, $19, $0D, $15, $80, $FE, $01, $23, $19
-L907F:  .byte $1F, $FF, $0E, $19, $21, $18, $2B, $80, $FE, $01, $0E, $19, $18, $26, $1E, $80
-L908F:  .byte $FE, $01, $11, $0F, $1E, $FF, $1F, $1A, $27, $2A, $00
+.byte "<IF I KNOCK", EOL, ADVANCE, $01
+.byte "YOU DOWN,", EOL, ADVANCE, $01
+.byte "DON'T", EOL, ADVANCE, $01
+.byte "GET UP!>", EOM
 
 ;; "THEY SAY I CAN'T LOSE. I SAY YOU CAN'T WIN!"
 OppMsg47:
-L909A:  .byte $29, $1E, $12, $0F, $23, $FF, $1D, $0B, $23, $80, $FE, $01, $13, $FF, $0D, $0B
-L90AA:  .byte $18, $26, $1E, $80, $FE, $01, $16, $19, $1D, $0F, $25, $80, $80, $FE, $01, $13
-L90BA:  .byte $FF, $1D, $0B, $23, $FF, $23, $19, $1F, $80, $FE, $01, $0D, $0B, $18, $26, $1E
-L90CA:  .byte $FF, $21, $13, $18, $27, $2A, $00
+.byte "<THEY SAY", EOL, ADVANCE, $01
+.byte "I CAN'T", EOL, ADVANCE, $01
+.byte "LOSE.", EOL, EOL, ADVANCE, $01
+.byte "I SAY YOU", EOL, ADVANCE, $01
+.byte "CAN'T WIN!>", EOM
 
 ;; "HEY! IS THIS KID A JOKE? WHERE'S THE REAL CHALLENGER"
 OppMsg48:
-L90D1:  .byte $29, $12, $0F, $23, $27, $80, $80, $FE, $01, $13, $1D, $FF, $1E, $12, $13, $1D
-L90E1:  .byte $80, $FE, $01, $15, $13, $0E, $FF, $0B, $80, $FE, $01, $14, $19, $15, $0F, $30
-L90F1:  .byte $80, $80, $FE, $01, $21, $12, $0F, $1C, $0F, $26, $1D, $80, $FE, $01, $1E, $12
-L9101:  .byte $0F, $FF, $1C, $0F, $0B, $16, $80, $FE, $01, $0D, $12, $0B, $16, $16, $0F, $18
-L9111:  .byte $11, $0F, $1C, $2A, $00
+.byte "<HEY!", EOL, EOL, ADVANCE, $01
+.byte "IS THIS", EOL, ADVANCE, $01
+.byte "KID A", EOL, ADVANCE, $01
+.byte "JOKE?", EOL, EOL, ADVANCE, $01
+.byte "WHERE'S", EOL, ADVANCE, $01
+.byte "THE REAL", EOL, ADVANCE, $01
+.byte "CHALLENGER>", EOM
 
 ;; "YOUR EXPERIENCE DOESN'T MATCH MINE. GO HOME AND PRACTICE!"
 OppMsg49:
-L9116:  .byte $29, $23, $19, $1F, $1C, $80, $FE, $01, $0F, $22, $1A, $0F, $1C, $13, $0F, $18
-L9126:  .byte $0D, $0F, $80, $FE, $01, $0E, $19, $0F, $1D, $18, $26, $1E, $80, $FE, $01, $17
-L9136:  .byte $0B, $1E, $0D, $12, $FF, $17, $13, $18, $0F, $25, $80, $80, $FE, $01, $11, $19
-L9146:  .byte $FF, $12, $19, $17, $0F, $80, $FE, $01, $0B, $18, $0E, $80, $FE, $01, $1A, $1C
-L9156:  .byte $0B, $0D, $1E, $13, $0D, $0F, $27, $2A, $00
+.byte "<YOUR", EOL, ADVANCE, $01
+.byte "EXPERIENCE", EOL, ADVANCE, $01
+.byte "DOESN'T", EOL, ADVANCE, $01
+.byte "MATCH MINE.", EOL, EOL, ADVANCE, $01
+.byte "GO HOME", EOL, ADVANCE, $01
+.byte "AND", EOL, ADVANCE, $01
+.byte "PRACTICE!>", EOM
 
 ;; -----------------------------------------------------------------------------------------
 
+;; Misc messages contain a 2 byte header indicating where on the 
+.include "screen.asm"
+
 ;; "STARRING LITTLE MAC AND HIS TRAINER DOC LOUIS  ALSO PLAYING THE ROLE OF MAC, IT'S YOU!!"
-L915F:  .byte $82, $21, $81, $20, $80, $FE, $08, $1D, $1E, $0B, $1C, $1C, $13, $18, $11, $80
-L916F:  .byte $80, $FE, $07, $16, $13, $1E, $1E, $16, $0F, $FF, $17, $0B, $0D, $80, $81, $50
-L917F:  .byte $80, $FE, $0A, $0B, $18, $0E, $80, $80, $FE, $06, $12, $13, $1D, $FF, $1E, $1C
-L918F:  .byte $0B, $13, $18, $0F, $1C, $80, $FE, $07, $0E, $19, $0D, $FF, $16, $19, $1F, $13
-L919F:  .byte $1D, $80, $81, $20, $80, $FE, $0A, $0B, $16, $1D, $19, $80, $1A, $16, $0B, $23
-L91AF:  .byte $13, $18, $11, $FF, $1E, $12, $0F, $FF, $1C, $19, $16, $0F, $FF, $19, $10, $FF
-L91BF:  .byte $17, $0B, $0D, $2B, $80, $81, $10, $80, $FE, $07, $13, $1E, $26, $1D, $FF, $23
-L91CF:  .byte $19, $1F, $27, $27, $80, $81, $50, $00
+MiscMsg1:
+.word col_02 + row_12 + nametable_0     ;.byte $82, $21
+.byte SLEEP, $20, EOL, ADVANCE, $08
+.byte "STARRING", EOL, EOL, ADVANCE, $07
+.byte "LITTLE MAC", EOL, SLEEP, $50, EOL, ADVANCE, $0A
+.byte "AND", EOL, EOL, ADVANCE, $06
+.byte "HIS TRAINER", EOL, ADVANCE, $07
+.byte "DOC LOUIS", EOL, SLEEP, $20, EOL, ADVANCE, $0A
+.byte "ALSO", EOL
+.byte "PLAYING THE ROLE OF MAC,", EOL, SLEEP, $10, EOL, ADVANCE, $07
+.byte "IT'S YOU!!", EOL, SLEEP, $50, EOM
 
 ;; "THIS IS A STORY OF TRUE VICTORY!! BUT THE ROAD IS LONG......"
-L91D7:  .byte $81, $2A, $FE, $06, $1E, $12, $13, $1D, $FF, $13, $1D, $FF, $0B, $FF, $1D, $1E
-L91E7:  .byte $19, $1C, $23, $80, $FE, $05, $19, $10, $FF, $1E, $1C, $1F, $0F, $FF, $20, $13
-L91F7:  .byte $0D, $1E, $19, $1C, $23, $27, $27, $80, $80, $0C, $1F, $1E, $FF, $1E, $12, $0F
-L9207:  .byte $FF, $1C, $19, $0B, $0E, $FF, $13, $1D, $FF, $16, $19, $18, $11, $25, $25, $25
-L9217:  .byte $25, $25, $25, $80, $81, $50, $00
+MiscMsg2:
+.word col_01 + row_20 + nametable_2     ;.byte $81, $2A
+.byte ADVANCE, $06
+.byte "THIS IS A STORY", EOL, ADVANCE, $05
+.byte "OF TRUE VICTORY!!", EOL, EOL
+.byte "BUT THE ROAD IS LONG......", EOL
+.byte SLEEP, $50, EOM
 
 ;; "PASS KEY IS"
-L921E:  .byte $70, $20, $FF, $1A, $0B, $1D, $1D, $FF, $15, $0F, $23, $FF, $13, $1D, $80, $80
-L922E:  .byte $FE, $01, $00
+MiscMsg3:
+.word col_16 + row_03 + nametable_0     ;.byte $70, $20
+.byte " PASS KEY IS", EOL, EOL, ADVANCE, $01, EOM
 
 ;; "PUSH START!"
-L9231:  .byte $F0, $20, $FF, $1A, $1F, $1D, $12, $FF, $1D, $1E, $0B, $1C, $1E, $27, $00
+MiscMsg4:
+.word col_16 + row_07 + nametable_0     ;.byte $F0, $20
+.byte " PUSH START!", EOM
 
-;; "J!T 5H 5E BE 5N 5D"  (Not sure what this is)
-L9240:  .byte $14, $27, $1E, $81, $06, $12, $81, $06, $0F, $FF, $FF, $81, $0C, $0F, $81, $06
-L9250:  .byte $18, $81, $06, $0E, $00
+;; "THE END"
+MiscMsg5:
+.word col_20 + row_24 + nametable_1     ;.byte $14, $27
+.byte "T", SLEEP, $06
+.byte "H", SLEEP, $06
+.byte "E  ", SLEEP, $0C
+.byte "E", SLEEP, $06
+.byte "N", SLEEP, $06
+.byte "D", EOM
+
 
 ;; Credits Page 1
-L9255:  .byte $40, $20, $FE, $06, $1A, $1C, $19, $0E, $1F, $0D, $0F, $1C, $FF, $FF, $17, $25
-L9265:  .byte $FF, $0B, $1C, $0B, $15, $0B, $21, $0B, $81, $20, $80, $80, $FE, $04, $1D, $1F
-L9275:  .byte $1A, $0F, $1C, $20, $13, $1D, $19, $1C, $FF, $FF, $18, $19, $0B, $81, $20, $80
-L9285:  .byte $80, $FE, $06, $0E, $13, $1C, $0F, $0D, $1E, $19, $1C, $FF, $FF, $11, $25, $FF
-L9295:  .byte $1E, $0B, $15, $0F, $0E, $0B, $81, $20, $80, $80, $FE, $01, $11, $0B, $17, $0F
-L92A5:  .byte $FF, $0E, $0F, $1D, $13, $11, $18, $0F, $1C, $FF, $FF, $15, $25, $FF, $23, $19
-L92B5:  .byte $18, $0F, $23, $0B, $17, $0B, $81, $10, $80, $FE, $10, $17, $25, $FF, $12, $13
-L92C5:  .byte $1C, $19, $1E, $0B, $81, $20, $80, $80, $FE, $01, $0D, $12, $0B, $1C, $0B, $0D
-L92D5:  .byte $1E, $0F, $1C, $80, $FE, $06, $0E, $0F, $1D, $13, $11, $18, $0F, $1C, $FF, $FF
-L92E5:  .byte $17, $25, $FF, $21, $0B, $0E, $0B, $81, $20, $80, $80, $FE, $01, $17, $1F, $1D
-L92F5:  .byte $13, $0D, $80, $FE, $06, $0D, $19, $17, $1A, $19, $1D, $0F, $1C, $FF, $FF, $1F
-L9305:  .byte $25, $FF, $15, $0B, $18, $0F, $19, $15, $0B, $81, $10, $80, $FE, $10, $0B, $25
-L9315:  .byte $FF, $18, $0B, $15, $0B, $1E, $1F, $15, $0B, $81, $10, $80, $FE, $10, $15, $25
-L9325:  .byte $FF, $23, $0B, $17, $0B, $17, $19, $1E, $19, $81, $20, $00
+MiscMsg6:
+.word col_00 + row_02 + nametable_0   ;.byte $40, $20
+.byte ADVANCE, $06
+.byte "PRODUCER  M. ARAKAWA", SLEEP, $20, EOL, EOL, ADVANCE, $04
+.byte "SUPERVISOR  NOA", SLEEP, $20, EOL, EOL, ADVANCE, $06
+.byte "DIRECTOR  G. TAKEDA", SLEEP, $20, EOL, EOL, ADVANCE, $01
+.byte "GAME DESIGNER  K. YONEYAMA", SLEEP, $10, EOL, ADVANCE, $10
+.byte "M. HIROTA", SLEEP, $20, EOL, EOL, ADVANCE, $01
+.byte "CHARACTER", EOL, ADVANCE, $06
+.byte "DESIGNER  M. WADA", SLEEP, $20, EOL, EOL, ADVANCE, $01
+.byte "MUSIC", EOL, ADVANCE, $06
+.byte "COMPOSER  U. KANEOKA", SLEEP, $10, EOL, ADVANCE, $10
+.byte "A. NAKATUKA", SLEEP, $10, EOL, ADVANCE, $10
+.byte "K. YAMAMOTO", SLEEP, $20, EOM
 
 ;; Credits Page 2
-L9331:  .byte $60, $22, $FE, $01, $0F, $16, $0F, $0D, $1E, $1C, $13, $0D, $0B, $16, $80, $FE
-L9341:  .byte $06, $0F, $18, $11, $13, $18, $0F, $0F, $1C, $FF, $FF, $1D, $25, $FF, $10, $1F
-L9351:  .byte $18, $0B, $15, $19, $1D, $12, $13, $81, $10, $80, $FE, $10, $17, $25, $FF, $1E
-L9361:  .byte $0B, $23, $0B, $81, $20, $80, $80, $FE, $04, $1A, $1C, $19, $11, $1C, $0B, $17
-L9371:  .byte $17, $0F, $1C, $FF, $FF, $17, $25, $FF, $12, $0B, $1E, $0B, $15, $0F, $23, $0B
-L9381:  .byte $17, $0B, $81, $20, $80, $80, $FE, $05, $1D, $0F, $0D, $1C, $0F, $1E, $0B, $1C
-L9391:  .byte $23, $FF, $FF, $1F, $25, $FF, $15, $1F, $1C, $13, $23, $0B, $17, $0B, $81, $20
-L93A1:  .byte $80, $80, $FE, $03, $0D, $19, $1A, $23, $1C, $13, $11, $12, $1E, $FF, $02, $0A
-L93B1:  .byte $09, $08, $FF, $18, $13, $18, $1E, $0F, $18, $0E, $19, $81, $20, $00
+MiscMsg7:
+.word col_00 + row_19 + nametable_0   ;.byte $60, $22
+.byte ADVANCE, $01
+.byte "ELECTRICAL", EOL, ADVANCE, $06
+.byte "ENGINEER  S. FUNAKOSHI", SLEEP, $10, EOL, ADVANCE, $10
+.byte "M. TAYA", SLEEP, $20, EOL, EOL, ADVANCE, $04
+.byte "PROGRAMMER  M. HATAKEYAMA", SLEEP, $20, EOL, EOL, ADVANCE, $05
+.byte "SECRETARY  U. KURIYAMA", SLEEP, $20, EOL, EOL, ADVANCE, $03
+.byte "COPYRIGHT 1987 NINTENDO", SLEEP, $20
 
 ;; -----------------------------------------------------------------------------------------
 

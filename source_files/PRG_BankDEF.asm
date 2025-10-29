@@ -758,14 +758,16 @@ LA5FF:  LDA #$00
 LA601:  STA UpdatePalFlag
 LA604:  DEC $1A
 
-LA606:  LDA $0410
+LA606:  LDA VRAMQueueStatus     ;($0410)
 LA609:  BPL $A613
 LA60B:  LDX PPU0Load
 LA60D:  STX PPUControl0
-LA610:  JSR $C24A
+LA610:  JSR FlushVRAMQueue
+
 LA613:  LDA PPU0Load
-LA615:  AND #$FB
+LA615:  AND #$FB                ;Set VRAM address increment to horizontal instead of vertical
 LA617:  STA PPUControl0
+
 LA61A:  LDA FrameCounter        ;($1E)
 LA61C:  AND #$03
 LA61E:  BEQ $A62C
@@ -884,9 +886,9 @@ LA6F8:  INC FrameCounter        ;($1E)
 LA6FA:  LDA TransTimer
 LA6FC:  BEQ $A700
 LA6FE:  DEC TransTimer
-LA700:  LDA $0410
+LA700:  LDA VRAMQueueStatus     ;($0410)
 LA703:  BPL $A708
-LA705:  JSR $C24A
+LA705:  JSR FlushVRAMQueue
 
 LA708:  LDA UpdatePalFlag
 LA70B:  BEQ $A721
@@ -1668,7 +1670,7 @@ LAD54:  STA $0411
 LAD57:  LDA #$70
 LAD59:  STA $0412
 LAD5C:  LDA #$81
-LAD5E:  STA $0410
+LAD5E:  STA VRAMQueueStatus
 LAD61:  JSR $C013
 LAD64:  LDX #$F3
 LAD66:  JSR $ADB6
@@ -4109,7 +4111,7 @@ LC008:  INX
 LC009:  DEC $E2
 LC00B:  BNE $C002
 LC00D:  LDA #$81
-LC00F:  STA $0410
+LC00F:  STA VRAMQueueStatus     ;($0410)
 LC012:  RTS
 
 LC013:  LDA #$00
@@ -4405,27 +4407,33 @@ LC244:  DEX
 LC245:  BNE $C241
 LC247:  JMP $C155
 
-LC24A:  LDX #$00
-LC24C:  STX $0410
-LC24F:  BEQ $C254
-LC251:  INC $0412
-LC254:  LDA $0411
-LC257:  STA PPUAddress
-LC25A:  LDA $0412
-LC25D:  STA PPUAddress
-LC260:  LDA $0413,X
-LC263:  BEQ $C274
-LC265:  INX
-LC266:  STA PPUIOReg
-LC269:  LDA $0413,X
-LC26C:  BEQ $C274
-LC26E:  INX
-LC26F:  STA PPUIOReg
-LC272:  BNE $C260
-LC274:  INX
-LC275:  LDA $0413,X
-LC278:  BNE $C251
-LC27A:  RTS
+; Target VRAM address in VQAddressLB and VQAddressUB (X,Y)
+; PPUControl0 updated with desired settings (particularly VRAM write increment)
+FlushVRAMQueue:
+        LDX #$00                ;
+        STX VRAMQueueStatus     ;
+        BEQ Start               ;
+LoopI:  INC VQAddressLB         ;
+
+Start:  LDA VQAddressUB         ;Load the VRAM address into 
+        STA PPUAddress          ;
+        LDA VQAddressLB         ;
+        STA PPUAddress          ;
+
+LoopJ:  LDA VRAMQueueData,X     ;Write bytes to VRAM, breaking on $00
+        BEQ Next
+        INX
+        STA PPUIOReg
+        LDA VRAMQueueData,X     ;Unrolled loop
+        BEQ Next
+        INX
+        STA PPUIOReg
+        BNE LoopJ
+
+Next:   INX                     ;Load the next byte after the $00
+        LDA VRAMQueueData,X
+        BNE LoopI               ;Terminate on $00,$00
+        RTS
 
 LC27B:  LDX $AC
 LC27D:  BMI $C28E

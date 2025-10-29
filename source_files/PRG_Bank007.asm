@@ -1309,10 +1309,10 @@ L8A60:  STY CrowdStateIndex     ;($43) Set CrowdStateIndex = 0x00
 L8A62:  ASL
 L8A63:  TAY
 L8A64:  LDA CrowdDataPtrs,Y     ;($8CD2)
-L8A67:  STA CrowdStBasePtrLB    ;($44)
+L8A67:  STA CrowdStBasePtr    ;($44)
 L8A69:  INY
 L8A6A:  LDA CrowdDataPtrs,Y     ;($8CD2)
-L8A6D:  STA CrowdStBasePtrUB    ;($45)
+L8A6D:  STA CrowdStBasePtr+1    ;($45)
 
 CheckCrowdSpecial:
 L8A6F:  LDA CrowdCurState       ;($40)

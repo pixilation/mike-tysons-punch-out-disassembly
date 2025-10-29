@@ -276,11 +276,11 @@ PointsNew:          .res 1  ;($3E1) New points that should be added to the total
 PointsTotal:        .res 1  ;($3E8) Total points for this round (base 10)
 
                     .res 39  ;($3E9)
-VRAMQueue:                  ;Base pointer for the VRAM queue
 VRAMQueueStatus:    .res 1  ;($410) Status of the VRAM queue
-VQAddress:                  ;VRAM address where bytes from the queue will be written
-VQAddressLB:        .res 1  ;($411) VRAM address where queue bytes will be written (lower byte)
-VQAddressUB:        .res 1  ;($412) VRAM address where queue bytes will be written (upper byte)
+                            ;bit 7: set VRAM address increment to horizontal
+                            ;This seems to hold either $81 or $00
+VQAddressUB:        .res 1  ;($411) VRAM address where queue bytes will be written (upper byte)
+VQAddressLB:        .res 1  ;($412) VRAM address where queue bytes will be written (lower byte)
 VRAMQueueData:      .res 1  ;($413) Base pointer for data to be copied into VRAM
 
                     .res 108  ;($414)
@@ -290,7 +290,27 @@ ThisSprtPalette:    .res 1  ;($490) Through $049F. Current sprite palette data.
                     .res 15  ;($491)
 UpdatePalFlag:      .res 1  ;($4A0) Non-zero value indicates the palettes need to be updated.
 
-                    .res 31  ;($4A1)
+                    .res 15  ;($4A1)
+MessageID:          .res 1  ;($4B0) Current message being printed
+LetterTimer:        .res 1  ;($4B1) Number of frames until the next character is printed
+LetterIndex:        .res 1  ;($4B2) This is an index into the current message containing the next character
+MessagePtr:         .res 2  ;($4B3) Pointer to the current text message
+
+;Note: these are in big endian order
+LinePosUB:          .res 1  ;($4B5) Position of the current text message line (Upper Byte).
+LinePosLB:          .res 1  ;($4B6) Position of the current text message line (Lower Byte).
+
+;Note: these are in big endian order
+MessagePosUB:       .res 1  ;($4B7) Top left position of the current text message (Upper Byte)
+MessagePosLB:       .res 1  ;($4B8) Top left position of the current text message (Lower Byte)
+
+                    .res 4  ;($4B9)
+TalkingSFX:         .res 1  ;($4BD) Sound effect that plays while the text message is output
+
+; ? :=        $04BE ; Next TrainerMessage to show
+; ? :=        $04BF ; Next OppMessage to show
+
+                    .res 2  ;($4BE)
 PasskeyStatus:      .res 1  ;($4C0) Pass key status...
 PasskeyCursor:      .res 1  ;($4C1) Pass key cursor...
 PasskeyModified:    .res 1  ;($4C2) Pass key modified...

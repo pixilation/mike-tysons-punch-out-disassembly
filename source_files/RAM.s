@@ -239,16 +239,34 @@ PointsStatus :=     $03E0   ;Status of points
 PointsNew :=        $03E1   ;New points that should be added to the total (base 10)
 PointsTotal :=      $03E8   ;Total points for this round (base 10)
 
-VRAMQueue :=        $0410   ;Base pointer for the VRAM queue
 VRAMQueueStatus :=  $0410   ;Status of the VRAM queue
-VQAddress :=        $0411   ;VRAM address where bytes from the queue will be written
-VQAddressLB :=      $0411   ;VRAM address where queue bytes will be written (lower byte)
-VQAddressUB :=      $0412   ;VRAM address where queue bytes will be written (upper byte)
+                            ;bit 7: set VRAM address increment to horizontal
+                            ;This seems to hold either $81 or $00
+VQAddressUB :=      $0411   ;VRAM address where queue bytes will be written (upper byte)
+VQAddressLB :=      $0412   ;VRAM address where queue bytes will be written (lower byte)
 VRAMQueueData :=    $0413   ;Base pointer for data to be copied into VRAM
 
 ThisBkgPalette :=   $0480   ;Through $048F. Current background palette data.
 ThisSprtPalette :=  $0490   ;Through $049F. Current sprite palette data.
 UpdatePalFlag :=    $04A0   ;Non-zero value indicates the palettes need to be updated.
+
+MessageID :=        $04B0   ;Current message being printed
+LetterTimer :=      $04B1   ;Number of frames until the next character is printed
+LetterIndex :=      $04B2   ;This is an index into the current message containing the next character
+MessagePtr :=       $04B3   ;Pointer to the current text message
+
+;Note: these are in big endian order
+LinePosUB :=        $04B5   ;Position of the current text message line (Upper Byte).
+LinePosLB :=        $04B6   ;Position of the current text message line (Lower Byte).
+
+;Note: these are in big endian order
+MessagePosUB :=     $04B7   ;Top left position of the current text message (Upper Byte)
+MessagePosLB :=     $04B8   ;Top left position of the current text message (Lower Byte)
+
+TalkingSFX :=       $04BD   ;Sound effect that plays while the text message is output
+
+; ? :=        $04BE ; Next TrainerMessage to show
+; ? :=        $04BF ; Next OppMessage to show
 
 PasskeyStatus :=    $04C0   ;Pass key status...
 PasskeyCursor :=    $04C1   ;Pass key cursor...
